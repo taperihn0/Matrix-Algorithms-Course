@@ -1,3 +1,0 @@
-/home/szymek/Source/Matrix-Algorithms-Course/lab1/build_debug/CMakeFiles/MatrixMulLabs.dir
-/home/szymek/Source/Matrix-Algorithms-Course/lab1/build_debug/CMakeFiles/edit_cache.dir
-/home/szymek/Source/Matrix-Algorithms-Course/lab1/build_debug/CMakeFiles/rebuild_cache.dir

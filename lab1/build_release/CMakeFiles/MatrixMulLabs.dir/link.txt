@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/MatrixMulLabs.dir/src/main.cpp.o CMakeFiles/MatrixMulLabs.dir/src/matrix.cpp.o -o MatrixMulLabs 

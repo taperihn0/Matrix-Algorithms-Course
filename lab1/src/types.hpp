@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <type_traits>
 #include <string>
+#include <cassert>
 
 template <typename T, typename = std::enable_if_t<std::is_floating_point_v<T>>>
 class WrappedFloat {

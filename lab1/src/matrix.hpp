@@ -45,7 +45,10 @@ public:
 
     T& at(size_type i, size_type j);
     const T& at(size_type i, size_type j) const;
-    
+
+    T* data();
+    const T* data() const;
+
 private:
     void check_index(size_type i, size_type j) const;
 
@@ -60,6 +63,7 @@ public:
     using size_type = std::size_t;
 
     Matrix2xView() = default;
+
     Matrix2xView(const T* data, 
                  size_type orig_cols, 
                  size_type start_row, 
@@ -74,17 +78,30 @@ public:
         , m_cols(view_cols)
     {}
 
+    Matrix2xView(const Matrix2xView& other, 
+                 size_type orig_row, 
+                 size_type orig_col, 
+                 size_type view_rows, 
+                 size_type view_cols)
+        : m_data(other.m_data)
+        , m_orig_cols(other.m_orig_cols)
+        , m_start_row(other.m_start_row + orig_row)
+        , m_start_col(other.m_start_col + orig_col)
+        , m_rows(view_rows)
+        , m_cols(view_cols)
+    {}
+
     size_type rows() const { return m_rows; }
     size_type cols() const { return m_cols; }
 
     const T* data() const { return m_data; }
 
     const T& at(size_type i, size_type j) const {
-        return (m_start_row + i) * m_orig_cols + (m_start_col + j);
+        return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
     }
 
-    T at(size_type i, size_type j) const {
-        return (m_start_row + i) * m_orig_cols + (m_start_col + j);
+    T& at(size_type i, size_type j) {
+        return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
     }
 
 private:
@@ -104,7 +121,7 @@ enum class enumMatMult {
 };
 
 template <typename T, enumMatMult Alg>
-Matrix2x<T> matrix_mul(const Matrix2x<T>& a, const Matrix2x<T>& b);
+Matrix2x<T> matrix_mul(const Matrix2x<T>& a, const Matrix2x<T>& b, enumMatMult alg);
 
 template <typename T>
 inline Matrix2x<T>::Matrix2x(size_type n, size_type m)
@@ -167,6 +184,16 @@ template <typename T>
 inline const T& Matrix2x<T>::at(size_type i, size_type j) const {
     check_index(i, j);
     return m_data[i * m_cols + j];
+}
+
+template <typename T>
+T* Matrix2x<T>::data() {
+    return m_data;
+}
+
+template <typename T>
+const T* Matrix2x<T>::data() const {
+    return m_data;
 }
 
 template <typename T>
@@ -336,7 +363,7 @@ inline std::ostream& operator<<(std::ostream& os, const Matrix2x<T>& m) {
     for (typename Matrix2x<T>::size_type i = 0; i < m.rows(); ++i) {
         for (typename Matrix2x<T>::size_type j = 0; j < m.cols(); ++j) {
             if (j > 0) os << ' ';
-            os << m[i][j];
+            os << m.at(i, j);
         }
         os << '\n';
     }
