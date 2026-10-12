@@ -38,6 +38,7 @@ public:
     T value() const { return m_val; }
 
     WrappedFloat& operator=(T v) { m_val = v; return *this; }
+    WrappedFloat& operator=(const WrappedFloat& other) { m_val = other.m_val; return *this; }
 private:
     T m_val;
 };

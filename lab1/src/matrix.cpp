@@ -2,26 +2,26 @@
 
 template <typename T>
 void default_matrix_mul(const Matrix2xView<T>& a, const Matrix2xView<T>& b, Matrix2xView<T>& c) {
-    assert(a.rows() == b.cols());
+    assert(a.cols() == b.rows());
+    assert(a.rows() == c.rows() && b.cols() == c.cols());
 
     for (std::size_t i = 0; i < a.rows(); ++i) {
         for (std::size_t j = 0; j < b.cols(); ++j) {
-            T sum = 0; 
+            T sum = 0.l; 
 
             for (std::size_t k = 0; k < a.cols(); ++k) {
-                sum += a(i, k) * b(k, j);
+                sum += a.at(i, k) * b.at(k, j);
             }
 
             c.at(i, j) += sum;
         }
     }
-
-    return;
 }
 
 template <typename T>
 void binet_matrix_mul(const Matrix2xView<T>& a, const Matrix2xView<T>& b, Matrix2xView<T>& c) {
     assert(a.cols() == b.rows());
+    assert(a.rows() == a.cols() && b.rows() == b.cols()); 
     assert(a.rows() == c.rows() && b.cols() == c.cols());
 
     static constexpr std::size_t BaseBlockSize = 4;
@@ -67,17 +67,26 @@ template <typename T>
 Matrix2x<T> matrix_mul(const Matrix2x<T>& a, const Matrix2x<T>& b, enumMatMult alg) {
     assert(a.cols() == b.rows());
 
-    const auto n = a.cols();
-    const auto m = b.rows();
+    const auto a_rows = a.rows();
+    const auto a_cols = a.cols();
+    const auto b_rows = b.rows();
+    const auto b_cols = b.cols();
+    const auto res_rows = a_rows;
+    const auto res_cols = b_cols;
 
-    Matrix2x<T> res(n, m);
-    Matrix2xView view(res.data(), m, 0, 0, n, m);
+    Matrix2xView<T> a_view(a.data(), a_cols, 0, 0, a_rows, a_cols);
+    Matrix2xView<T> b_view(b.data(), b_cols, 0, 0, b_rows, b_cols);
+
+    Matrix2x<T> res(res_rows, res_cols);
+    Matrix2xView<T> res_view(res.data(), res_cols, 0, 0, res_rows, res_cols);
 
     switch (alg) {
     case enumMatMult::Default:
-        default_matrix_mul(a, b, view);
+        default_matrix_mul(a_view, b_view, res_view);
+        break;
     case enumMatMult::Binet:
-        binet_matrix_mul(a, b, view);
+        binet_matrix_mul(a_view, b_view, res_view);
+        break;
     default: 
         assert(false);
     }

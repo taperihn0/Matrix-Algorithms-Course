@@ -188,12 +188,12 @@ inline const T& Matrix2x<T>::at(size_type i, size_type j) const {
 
 template <typename T>
 T* Matrix2x<T>::data() {
-    return m_data;
+    return m_data.data();
 }
 
 template <typename T>
 const T* Matrix2x<T>::data() const {
-    return m_data;
+    return m_data.data();
 }
 
 template <typename T>

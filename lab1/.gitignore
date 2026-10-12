@@ -1,12 +1,9 @@
-# Build directories
 build/
 build_debug/
 build_release/
 
-# Output directories
 out/
 
-# CMake generated files
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
