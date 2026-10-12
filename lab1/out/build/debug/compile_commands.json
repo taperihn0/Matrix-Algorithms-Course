@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/home/szymek/Source/Matrix-Algorithms-Course/lab1/out/build/debug",
+  "command": "/usr/bin/c++ -DDEBUG  -g -std=gnu++17 -o CMakeFiles/MatrixMulLabs.dir/src/main.cpp.o -c /home/szymek/Source/Matrix-Algorithms-Course/lab1/src/main.cpp",
+  "file": "/home/szymek/Source/Matrix-Algorithms-Course/lab1/src/main.cpp",
+  "output": "CMakeFiles/MatrixMulLabs.dir/src/main.cpp.o"
+},
+{
+  "directory": "/home/szymek/Source/Matrix-Algorithms-Course/lab1/out/build/debug",
+  "command": "/usr/bin/c++ -DDEBUG  -g -std=gnu++17 -o CMakeFiles/MatrixMulLabs.dir/src/matrix.cpp.o -c /home/szymek/Source/Matrix-Algorithms-Course/lab1/src/matrix.cpp",
+  "file": "/home/szymek/Source/Matrix-Algorithms-Course/lab1/src/matrix.cpp",
+  "output": "CMakeFiles/MatrixMulLabs.dir/src/matrix.cpp.o"
+}
+]
