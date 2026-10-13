@@ -1,5 +1,7 @@
 #include "matrix.hpp"
 
+#include <cassert>
+
 template <typename T>
 void default_matrix_mul(const Matrix2xView<T>& a, const Matrix2xView<T>& b, Matrix2xView<T>& c) {
     assert(a.cols() == b.rows());
@@ -7,13 +9,13 @@ void default_matrix_mul(const Matrix2xView<T>& a, const Matrix2xView<T>& b, Matr
 
     for (std::size_t i = 0; i < a.rows(); ++i) {
         for (std::size_t j = 0; j < b.cols(); ++j) {
-            T sum = 0.l; 
+            T sum = static_cast<T>(0.l); 
 
             for (std::size_t k = 0; k < a.cols(); ++k) {
-                sum += a.at(i, k) * b.at(k, j);
+                sum += a(i, k) * b(k, j);
             }
 
-            c.at(i, j) += sum;
+            c(i, j) += sum;
         }
     }
 }
@@ -35,30 +37,37 @@ void binet_matrix_mul(const Matrix2xView<T>& a, const Matrix2xView<T>& b, Matrix
     const auto n_div_l = n / 2;
     const auto n_div_r = n - n_div_l;
 
+    // Submatrices of C
+    auto c11 = Matrix2xView<T>(c, 0, 0, n_div_l, n_div_l);
+    auto c12 = Matrix2xView<T>(c, 0, n_div_l, n_div_l, n_div_r);
+    auto c21 = Matrix2xView<T>(c, n_div_l, 0, n_div_r, n_div_l);
+    auto c22 = Matrix2xView<T>(c, n_div_l, n_div_l, n_div_r, n_div_r);
+
+    // Submatrices of A
     const auto a11 = Matrix2xView<T>(a, 0, 0, n_div_l, n_div_l);
     const auto a12 = Matrix2xView<T>(a, 0, n_div_l, n_div_l, n_div_r);
     const auto a21 = Matrix2xView<T>(a, n_div_l, 0, n_div_r, n_div_l);
     const auto a22 = Matrix2xView<T>(a, n_div_l, n_div_l, n_div_r, n_div_r);
 
+    // Submatrices of B
     const auto b11 = Matrix2xView<T>(b, 0, 0, n_div_l, n_div_l);
     const auto b12 = Matrix2xView<T>(b, 0, n_div_l, n_div_l, n_div_r);
     const auto b21 = Matrix2xView<T>(b, n_div_l, 0, n_div_r, n_div_l);
     const auto b22 = Matrix2xView<T>(b, n_div_l, n_div_l, n_div_r, n_div_r);
-
-    auto c11 = Matrix2xView<T>(c, 0, 0, n_div_l, n_div_l);
-    auto c12 = Matrix2xView<T>(c, 0, n_div_l, n_div_l, n_div_r);
-    auto c21 = Matrix2xView<T>(c, n_div_l, 0, n_div_r, n_div_l);
-    auto c22 = Matrix2xView<T>(c, n_div_l, n_div_l, n_div_r, n_div_r);
     
+    // C11 = A11 * B11 + A12 * B21
     binet_matrix_mul(a11, b11, c11);
     binet_matrix_mul(a12, b21, c11);
 
+    // C12 = A11 * B12 + A12 * B22
     binet_matrix_mul(a11, b12, c12);
     binet_matrix_mul(a12, b22, c12);
 
+    // C21 = A21 * B11 + A22 * B21
     binet_matrix_mul(a21, b11, c21);
     binet_matrix_mul(a22, b21, c21);
 
+    // C22 = A21 * B12 + A22 * B22
     binet_matrix_mul(a21, b12, c22);
     binet_matrix_mul(a22, b22, c22);
 }

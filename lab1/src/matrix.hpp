@@ -46,6 +46,9 @@ public:
     T& at(size_type i, size_type j);
     const T& at(size_type i, size_type j) const;
 
+    T& operator()(size_type i, size_type j);
+    const T& operator()(size_type i, size_type j) const;
+
     T* data();
     const T* data() const;
 
@@ -64,7 +67,21 @@ public:
 
     Matrix2xView() = default;
 
-    Matrix2xView(const T* data, 
+    Matrix2xView(const T* data,
+                 size_type orig_cols,
+                 size_type start_row,
+                 size_type start_col,
+                 size_type view_rows,
+                 size_type view_cols)
+        : m_data(const_cast<T*>(data))
+        , m_orig_cols(orig_cols)
+        , m_start_row(start_row)
+        , m_start_col(start_col)
+        , m_rows(view_rows)
+        , m_cols(view_cols)
+    {}
+
+    Matrix2xView(T* data, 
                  size_type orig_cols, 
                  size_type start_row, 
                  size_type start_col, 
@@ -104,8 +121,11 @@ public:
         return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
     }
 
+    const T& operator()(size_type i, size_type j) const { return at(i, j); }
+    T& operator()(size_type i, size_type j) { return at(i, j); }
+
 private:
-    const T* m_data = nullptr;
+    T* m_data = nullptr;
     size_type m_orig_cols = 0;
     size_type m_start_row = 0;
     size_type m_start_col = 0;
@@ -120,7 +140,7 @@ enum class enumMatMult {
     Laderman
 };
 
-template <typename T, enumMatMult Alg>
+template <typename T>
 Matrix2x<T> matrix_mul(const Matrix2x<T>& a, const Matrix2x<T>& b, enumMatMult alg);
 
 template <typename T>
@@ -169,8 +189,11 @@ template <typename T>
 inline void Matrix2x<T>::check_index(size_type i, size_type j) const {
 #ifdef DEBUG
     if (i >= m_rows || j >= m_cols) {
-        throw std::out_of_range("Matrix2x: index out of range");
+        throw std::out_of_range("Index out of range");
     }
+#else
+    (void)i;
+    (void)j;
 #endif
 }
 
@@ -184,6 +207,16 @@ template <typename T>
 inline const T& Matrix2x<T>::at(size_type i, size_type j) const {
     check_index(i, j);
     return m_data[i * m_cols + j];
+}
+
+template <typename T>
+inline T& Matrix2x<T>::operator()(size_type i, size_type j) {
+    return at(i, j);
+}
+
+template <typename T>
+inline const T& Matrix2x<T>::operator()(size_type i, size_type j) const {
+    return at(i, j);
 }
 
 template <typename T>

@@ -10,7 +10,7 @@ class WrappedFloat {
 public:
     using value_type = T;
 
-    explicit WrappedFloat(T fl);
+    explicit WrappedFloat(T fl) : m_val(fl) {}
     WrappedFloat() = default;
 
     operator T() const { return m_val; }

@@ -1,10 +1,12 @@
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 #include "matrix.hpp"
 
 int main() {
     Matrix2x<float> m({
         {1., 2., 3.},
-        {4., 5., 6.}
+        {1., 2., 3.}
     });
 
     std::cout << m << std::endl;
