@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 #include <stdexcept>
@@ -80,68 +81,47 @@ public:
                  size_type start_row,
                  size_type start_col,
                  size_type view_rows,
-                 size_type view_cols)
-        : m_data(const_cast<T*>(data))
-        , m_orig_cols(orig_cols)
-        , m_start_row(start_row)
-        , m_start_col(start_col)
-        , m_rows(view_rows)
-        , m_cols(view_cols)
-    {}
+                 size_type view_cols);
 
     Matrix2xView(T* data, 
                  size_type orig_cols, 
                  size_type start_row, 
                  size_type start_col, 
                  size_type view_rows, 
-                 size_type view_cols)
-        : m_data(data)
-        , m_orig_cols(orig_cols)
-        , m_start_row(start_row)
-        , m_start_col(start_col)
-        , m_rows(view_rows)
-        , m_cols(view_cols)
-    {}
+                 size_type view_cols);
 
     Matrix2xView(const Matrix2xView& other, 
                  size_type orig_row, 
                  size_type orig_col, 
                  size_type view_rows, 
-                 size_type view_cols)
-        : m_data(other.m_data)
-        , m_orig_cols(other.m_orig_cols)
-        , m_start_row(other.m_start_row + orig_row)
-        , m_start_col(other.m_start_col + orig_col)
-        , m_rows(view_rows)
-        , m_cols(view_cols)
-    {}
+                 size_type view_cols);
 
     Matrix2xView<T> submatrix_view(size_type start_row,
                                    size_type start_col,
                                    size_type view_rows,
-                                   size_type view_cols)
-    {
-        return Matrix2xView<T>(data(), m_orig_cols, start_row, start_col, view_rows, view_cols);
-    }
+                                   size_type view_cols);
 
-    size_type rows() const { return m_rows; }
-    size_type cols() const { return m_cols; }
+    size_type rows() const;
+    size_type cols() const;
 
-    T* data() { return m_data; }
-    const T* data() const { return m_data; }
+    T* data();
+    const T* data() const;
 
-    const T& at(size_type i, size_type j) const {
-        return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
-    }
+    const T& at(size_type i, size_type j) const;
+    T& at(size_type i, size_type j);
 
-    T& at(size_type i, size_type j) {
-        return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
-    }
+    const T& operator()(size_type i, size_type j) const;
+    T& operator()(size_type i, size_type j);
 
-    const T& operator()(size_type i, size_type j) const { return at(i, j); }
-    T& operator()(size_type i, size_type j) { return at(i, j); }
+    void fill(const T& value);
+
+    static void add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
+    static void sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
 
 private:
+    template <int Sign>
+    static void accum_impl(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
+
     T* m_data = nullptr;
     size_type m_orig_cols = 0;
     size_type m_start_row = 0;
@@ -427,6 +407,131 @@ inline std::ostream& operator<<(std::ostream& os, const Matrix2x<T>& m) {
         os << '\n';
     }
     return os;
+}
+
+template <typename T>
+inline Matrix2xView<T>::Matrix2xView(const T* data,
+                                     size_type orig_cols,
+                                     size_type start_row,
+                                     size_type start_col,
+                                     size_type view_rows,
+                                     size_type view_cols)
+    : m_data(const_cast<T*>(data))
+    , m_orig_cols(orig_cols)
+    , m_start_row(start_row)
+    , m_start_col(start_col)
+    , m_rows(view_rows)
+    , m_cols(view_cols)
+{}
+
+template <typename T>
+inline Matrix2xView<T>::Matrix2xView(T* data, 
+                                     size_type orig_cols, 
+                                     size_type start_row, 
+                                     size_type start_col, 
+                                     size_type view_rows, 
+                                     size_type view_cols)
+    : m_data(data)
+    , m_orig_cols(orig_cols)
+    , m_start_row(start_row)
+    , m_start_col(start_col)
+    , m_rows(view_rows)
+    , m_cols(view_cols)
+{}
+
+template <typename T>
+inline Matrix2xView<T>::Matrix2xView(const Matrix2xView& other, 
+                                     size_type orig_row, 
+                                     size_type orig_col, 
+                                     size_type view_rows, 
+                                     size_type view_cols)
+    : m_data(other.m_data)
+    , m_orig_cols(other.m_orig_cols)
+    , m_start_row(other.m_start_row + orig_row)
+    , m_start_col(other.m_start_col + orig_col)
+    , m_rows(view_rows)
+    , m_cols(view_cols)
+{}
+
+template <typename T>
+inline Matrix2xView<T> Matrix2xView<T>::submatrix_view(size_type start_row,
+                                                       size_type start_col,
+                                                       size_type view_rows,
+                                                       size_type view_cols)
+{
+    return Matrix2xView<T>(data(), m_orig_cols, start_row, start_col, view_rows, view_cols);
+}
+
+template <typename T>
+inline typename Matrix2xView<T>::size_type Matrix2xView<T>::rows() const {
+    return m_rows;
+}
+
+template <typename T>
+inline typename Matrix2xView<T>::size_type Matrix2xView<T>::cols() const {
+    return m_cols;
+}
+
+template <typename T>
+inline T* Matrix2xView<T>::data() {
+    return m_data;
+}
+
+template <typename T>
+inline const T* Matrix2xView<T>::data() const {
+    return m_data;
+}
+
+template <typename T>
+inline const T& Matrix2xView<T>::at(size_type i, size_type j) const {
+    return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
+}
+
+template <typename T>
+inline T& Matrix2xView<T>::at(size_type i, size_type j) {
+    return *(m_data + (m_start_row + i) * m_orig_cols + (m_start_col + j));
+}
+
+template <typename T>
+inline const T& Matrix2xView<T>::operator()(size_type i, size_type j) const {
+    return at(i, j);
+}
+
+template <typename T>
+inline T& Matrix2xView<T>::operator()(size_type i, size_type j) {
+    return at(i, j);
+}
+
+template <typename T>
+inline void Matrix2xView<T>::fill(const T& value) {
+    for (size_type i = 0; i < m_rows; ++i) {
+        T* row_begin = m_data + (m_start_row + i) * m_orig_cols + m_start_col;
+        std::fill(row_begin, row_begin + m_cols, value);
+    }
+}
+
+template <typename T>
+template <int Sign>
+inline void Matrix2xView<T>::accum_impl(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
+    static_assert(Sign == 1 || Sign == -1, "accum_impl: Sign must be +1 or -1");
+
+    const T sign = static_cast<T>(Sign);
+
+    for (size_type i = 0; i < a.rows(); ++i) {
+        for (size_type j = 0; j < a.cols(); ++j) {
+            acc(i, j) += a(i, j) + sign * b(i, j);
+        }
+    }
+}
+
+template <typename T>
+inline void Matrix2xView<T>::add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
+    accum_impl<1>(a, b, acc);
+}
+
+template <typename T>
+inline void Matrix2xView<T>::sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
+    accum_impl<-1>(a, b, acc);
 }
 
 using Matrix2xmf = Matrix2x<mfloat>;
