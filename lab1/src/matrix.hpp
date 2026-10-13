@@ -7,6 +7,9 @@
 #include "types.hpp"
 
 template <typename T>
+class Matrix2xView;
+
+template <typename T>
 class Matrix2x {
 public:
     using value_type = T;
@@ -14,6 +17,11 @@ public:
 
     Matrix2x() = default;
     explicit Matrix2x(size_type n, size_type m);
+
+    Matrix2xView<T> submatrix_view(size_type start_row, 
+                                   size_type start_col,
+                                   size_type view_rows,
+                                   size_type view_cols);
 
     size_type rows() const;
     size_type cols() const;
@@ -108,9 +116,18 @@ public:
         , m_cols(view_cols)
     {}
 
+    Matrix2xView<T> submatrix_view(size_type start_row,
+                                   size_type start_col,
+                                   size_type view_rows,
+                                   size_type view_cols)
+    {
+        return Matrix2xView<T>(data(), m_orig_cols, start_row, start_col, view_rows, view_cols);
+    }
+
     size_type rows() const { return m_rows; }
     size_type cols() const { return m_cols; }
 
+    T* data() { return m_data; }
     const T* data() const { return m_data; }
 
     const T& at(size_type i, size_type j) const {
@@ -173,6 +190,15 @@ inline Matrix2x<T>::Matrix2x(std::initializer_list<std::initializer_list<T>> ini
             m_data.push_back(v);
         }
     }
+}
+
+template <typename T>
+Matrix2xView<T> Matrix2x<T>::submatrix_view(size_type start_row, 
+                                            size_type start_col,
+                                            size_type view_rows,
+                                            size_type view_cols)
+{
+    return Matrix2xView<T>(data(), cols(), start_row, start_col, view_rows, view_cols);
 }
 
 template <typename T>

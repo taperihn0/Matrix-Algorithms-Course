@@ -16,7 +16,6 @@ public:
     operator T() const { return m_val; }
 
     WrappedFloat operator+(WrappedFloat rhs) const { return WrappedFloat(m_val + rhs.m_val); }
-    WrappedFloat operator-(WrappedFloat rhs) const { return WrappedFloat(m_val - rhs.m_val); }
     WrappedFloat operator*(WrappedFloat rhs) const { return WrappedFloat(m_val * rhs.m_val); }
     WrappedFloat operator/(WrappedFloat rhs) const { return WrappedFloat(m_val / rhs.m_val); }
 

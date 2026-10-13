@@ -2,6 +2,7 @@
 #include <sstream>
 #include <stdexcept>
 #include "matrix.hpp"
+#include "tests.hpp"
 
 int main() {
     Matrix2x<float> m({
@@ -10,4 +11,5 @@ int main() {
     });
 
     std::cout << m << std::endl;
+    return 0;
 }
