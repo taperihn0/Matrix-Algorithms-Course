@@ -115,8 +115,8 @@ public:
 
     void fill(const T& value);
 
-    static void add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
-    static void sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
+    static void matrix_add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
+    static void matrix_sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
 
 private:
     template <int Sign>
@@ -525,12 +525,12 @@ inline void Matrix2xView<T>::accum_impl(const Matrix2xView& a, const Matrix2xVie
 }
 
 template <typename T>
-inline void Matrix2xView<T>::add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
+inline void Matrix2xView<T>::matrix_add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
     accum_impl<1>(a, b, acc);
 }
 
 template <typename T>
-inline void Matrix2xView<T>::sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
+inline void Matrix2xView<T>::matrix_sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
     accum_impl<-1>(a, b, acc);
 }
 
