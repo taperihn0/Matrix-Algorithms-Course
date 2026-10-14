@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 
 void Benchmark::generate_test_matrix(const std::string &s, int start, int end,
                                      int step) {
@@ -24,7 +25,7 @@ void Benchmark::generate_test_matrix(const std::string &s, int start, int end,
 
     for (int l = 0; l < i; l++) {
       for (int w = 0; w < i; w++) {
-        a_file << rand() % 100 << " ";
+        a_file << (rand() % 1000) / 100.0 << " ";
       }
       a_file << "\n";
     }
@@ -32,7 +33,7 @@ void Benchmark::generate_test_matrix(const std::string &s, int start, int end,
 
     for (int l = 0; l < i; l++) {
       for (int w = 0; w < i; w++) {
-        b_file << rand() % 100 << " ";
+        b_file << (rand() % 1000) / 100.0 << " ";
       }
       b_file << "\n";
     }

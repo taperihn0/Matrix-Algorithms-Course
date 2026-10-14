@@ -9,6 +9,11 @@
 template <typename T, typename = std::enable_if_t<std::is_floating_point_v<T>>>
 class WrappedFloat {
 public:
+  inline static std::size_t add = 0;
+  inline static std::size_t sub = 0;
+  inline static std::size_t divs = 0;
+  inline static std::size_t mul = 0;
+
   using value_type = T;
 
   explicit WrappedFloat(T fl) : m_val(fl) {}
@@ -17,31 +22,39 @@ public:
   operator T() const { return m_val; }
 
   WrappedFloat operator+(WrappedFloat rhs) const {
+    ++add;
     return WrappedFloat(m_val + rhs.m_val);
   }
   WrappedFloat operator-(WrappedFloat rhs) const {
+    ++sub;
     return WrappedFloat(m_val - rhs.m_val);
   }
   WrappedFloat operator*(WrappedFloat rhs) const {
+    ++mul;
     return WrappedFloat(m_val * rhs.m_val);
   }
   WrappedFloat operator/(WrappedFloat rhs) const {
+    ++divs;
     return WrappedFloat(m_val / rhs.m_val);
   }
 
   WrappedFloat &operator+=(WrappedFloat rhs) {
+    ++add;
     m_val += rhs.m_val;
     return *this;
   }
   WrappedFloat &operator-=(WrappedFloat rhs) {
+    ++sub;
     m_val -= rhs.m_val;
     return *this;
   }
   WrappedFloat &operator*=(WrappedFloat rhs) {
+    ++mul;
     m_val *= rhs.m_val;
     return *this;
   }
   WrappedFloat &operator/=(WrappedFloat rhs) {
+    ++divs;
     m_val /= rhs.m_val;
     return *this;
   }
@@ -65,6 +78,13 @@ public:
   WrappedFloat &operator=(const WrappedFloat &other) {
     m_val = other.m_val;
     return *this;
+  }
+
+  void static reset_counters(){
+    add = 0;
+    sub = 0;
+    mul = 0;
+    divs = 0;
   }
 
 private:
