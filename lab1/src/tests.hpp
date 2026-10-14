@@ -10,10 +10,6 @@ static void check(bool ok, const char* expr, int line) {
     if (!ok) {
         ++g_failures;
         std::cerr << "FAILED (line " << line << "): " << expr;
-#ifdef DEBUG
-        WrappedFloat<float>* p = nullptr;
-        (void)p;
-#endif
         std::cerr << '\n';
     }
 }

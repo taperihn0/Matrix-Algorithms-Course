@@ -115,12 +115,17 @@ public:
 
     void fill(const T& value);
 
-    static void matrix_add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
-    static void matrix_sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
+    Matrix2xView& matrix_add2_accum_into(const Matrix2xView& a, const Matrix2xView& b);
+    Matrix2xView& matrix_sub2_accum_into(const Matrix2xView& a, const Matrix2xView& b);
+    Matrix2xView& matrix_add_accum_into(std::initializer_list<const Matrix2xView*> adds);
+    Matrix2xView& matrix_sub_accum_into(std::initializer_list<const Matrix2xView*> subs);
+    Matrix2xView& matrix_addsub_accum_into(std::initializer_list<const Matrix2xView*> adds,
+                                           std::initializer_list<const Matrix2xView*> subs);    
+
+    template <typename F>
+    static void looped_elem_assign(Matrix2xView& acc, F&& f);
 
 private:
-    template <int Sign>
-    static void accum_impl(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc);
 
     T* m_data = nullptr;
     size_type m_orig_cols = 0;
@@ -511,27 +516,55 @@ inline void Matrix2xView<T>::fill(const T& value) {
 }
 
 template <typename T>
-template <int Sign>
-inline void Matrix2xView<T>::accum_impl(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
-    static_assert(Sign == 1 || Sign == -1, "accum_impl: Sign must be +1 or -1");
-
-    const T sign = static_cast<T>(Sign);
-
-    for (size_type i = 0; i < a.rows(); ++i) {
-        for (size_type j = 0; j < a.cols(); ++j) {
-            acc(i, j) += a(i, j) + sign * b(i, j);
+template <typename F>
+inline void Matrix2xView<T>::looped_elem_assign(Matrix2xView& acc, F&& f) {
+    for (size_type i = 0; i < acc.rows(); ++i) {
+        for (size_type j = 0; j < acc.cols(); ++j) {
+            acc(i, j) = f(i, j);
         }
     }
 }
 
 template <typename T>
-inline void Matrix2xView<T>::matrix_add_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
-    accum_impl<1>(a, b, acc);
+inline Matrix2xView<T>& Matrix2xView<T>::matrix_add2_accum_into(const Matrix2xView& a, const Matrix2xView& b) {
+    return matrix_add_accum_into({&a, &b});
 }
 
 template <typename T>
-inline void Matrix2xView<T>::matrix_sub_accum(const Matrix2xView& a, const Matrix2xView& b, Matrix2xView& acc) {
-    accum_impl<-1>(a, b, acc);
+inline Matrix2xView<T>& Matrix2xView<T>::matrix_sub2_accum_into(const Matrix2xView& a, const Matrix2xView& b) {
+    return matrix_sub_accum_into({&a, &b});
+}
+
+template <typename T>
+inline Matrix2xView<T>& Matrix2xView<T>::matrix_add_accum_into(std::initializer_list<const Matrix2xView*> adds) {
+  return matrix_addsub_accum_into(adds, {});
+}
+
+template <typename T>
+inline Matrix2xView<T>& Matrix2xView<T>::matrix_sub_accum_into(std::initializer_list<const Matrix2xView*> subs) {
+  return matrix_addsub_accum_into({}, subs);
+}
+
+template <typename T>
+inline Matrix2xView<T>& Matrix2xView<T>::matrix_addsub_accum_into(std::initializer_list<const Matrix2xView<T>*> adds,
+                                                                  std::initializer_list<const Matrix2xView<T>*> subs) 
+{
+    looped_elem_assign(*this, 
+      [&](size_type i, size_type j) {
+        T sum = static_cast<T>(0);
+
+        for (const auto* a_view : adds) {
+            sum += (*a_view)(i, j);
+        }
+
+        for (const auto* s_view : subs) {
+            sum -= (*s_view)(i, j);
+        }
+
+        return sum;
+    });
+
+    return *this;
 }
 
 using Matrix2xmf = Matrix2x<mfloat>;
