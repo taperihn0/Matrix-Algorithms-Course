@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <sstream>
 #include "matrix.hpp"
 #include "types.hpp"
@@ -183,6 +184,76 @@ static void test_matrix_mul_laderman() {
     CHECK(got8 == expected8);
 }
 
+// Pseudo-random integer matrices with values in [-16, 16] (negatives and
+// zeros included). All intermediate float arithmetic stays well below 2^24,
+// so every algorithm computes exact integer results comparable with ==.
+static Matf make_pseudo_random(Matf::size_type n, std::uint32_t seed) {
+    Matf m(n, n);
+    std::uint32_t state = seed;
+    for (Matf::size_type i = 0; i < n; ++i) {
+        for (Matf::size_type j = 0; j < n; ++j) {
+            state = state * 1664525u + 1013904223u;
+            m(i, j) = static_cast<float>(static_cast<int>((state >> 16) % 33u) - 16);
+        }
+    }
+    return m;
+}
+
+// Independent naive O(n^3) reference, living entirely in the test code.
+static Matf reference_mul(const Matf& a, const Matf& b) {
+    Matf r(a.rows(), b.cols());
+    for (Matf::size_type i = 0; i < a.rows(); ++i) {
+        for (Matf::size_type j = 0; j < b.cols(); ++j) {
+            mfloat sum = mfloat(0.0f);
+            for (Matf::size_type k = 0; k < a.cols(); ++k) {
+                sum += a(i, k) * b(k, j);
+            }
+            r(i, j) = sum;
+        }
+    }
+    return r;
+}
+
+// Sizes spread over [15, 30]: bounds, powers of two, primes and multiples
+// of 2/3/4/5, hitting every algorithm's odd/even and remainder paths.
+static constexpr Matf::size_type kComplexSizes[] = {15, 16, 17, 23, 24, 25, 30};
+
+static void run_complex_mul_case(enumMatMult alg, const char* name, Matf::size_type n) {
+    const Matf a = make_pseudo_random(n, 0x9E3779B9u ^ static_cast<std::uint32_t>(n));
+    const Matf b = make_pseudo_random(n, 0x85EBCA6Bu + static_cast<std::uint32_t>(n) * 17u);
+
+    const Matf expected = reference_mul(a, b);
+    const Matf got = matrix_mul<mfloat>(a, b, alg);
+
+    const std::string ctx = std::string(name) + " n=" + std::to_string(n);
+    check(got.rows() == n && got.cols() == n, (ctx + ": dims").c_str(), __LINE__);
+    check(got == expected, (ctx + ": equals reference").c_str(), __LINE__);
+}
+
+static void test_matrix_mul_default_complex() {
+    for (const auto n : kComplexSizes) {
+        run_complex_mul_case(enumMatMult::Default, "default", n);
+    }
+}
+
+static void test_matrix_mul_binet_complex() {
+    for (const auto n : kComplexSizes) {
+        run_complex_mul_case(enumMatMult::Binet, "binet", n);
+    }
+}
+
+static void test_matrix_mul_strassen_complex() {
+    for (const auto n : kComplexSizes) {
+        run_complex_mul_case(enumMatMult::Strassen, "strassen", n);
+    }
+}
+
+static void test_matrix_mul_laderman_complex() {
+    for (const auto n : kComplexSizes) {
+        run_complex_mul_case(enumMatMult::Laderman, "laderman", n);
+    }
+}
+
 static void test_matrix_mul_binet() {
     Matf a(8, 8);
     Matf id(8, 8);
@@ -240,6 +311,10 @@ inline int run_tests() {
     test_matrix_mul_binet();
     test_matrix_mul_strassen();
     test_matrix_mul_laderman();
+    test_matrix_mul_default_complex();
+    test_matrix_mul_binet_complex();
+    test_matrix_mul_strassen_complex();
+    test_matrix_mul_laderman_complex();
     test_range_check();
     return g_failures;
 }

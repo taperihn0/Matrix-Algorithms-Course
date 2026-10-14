@@ -29,6 +29,15 @@ public:
       return mv;
   }
 
+  std::size_t get_mark_pointer() const { 
+    return m_pointer; 
+  }
+
+  void revert_to_mark(std::size_t mark) {
+      assert(mark <= m_pointer);
+      m_pointer = mark;
+  }
+
 private:
 #ifdef DEBUG
 void check_pointer_overflow(std::size_t req) {
@@ -107,6 +116,10 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
 
   std::array<Matrix2xView<T>, 7> p;
 
+  // Mark current stack pointer, then return to that mark
+  const auto p_mark = pbuf.get_mark_pointer();
+  const auto uv_mark = uvbuf.get_mark_pointer();
+
   for (auto& pi : p) {
       pi = pbuf.query_matrix_view(n_div, n_div);
       pi.fill(static_cast<T>(0));
@@ -154,6 +167,8 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
   c22.matrix_addsub_accum_into({&p[0], &p[2], &p[5]}, {&p[1]});
 
   if (even) { // means we're done, because entire matrix is already multiplied
+      pbuf.revert_to_mark(p_mark);
+      uvbuf.revert_to_mark(uv_mark);
       return;
   }
 
@@ -186,6 +201,9 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
 
       acc(last, j) += sum;
   }
+
+  pbuf.revert_to_mark(p_mark);
+  uvbuf.revert_to_mark(uv_mark);
 }
 
 } // namespace strassen
@@ -197,7 +215,8 @@ void binet_matrix_mul_accum(const Matrix2xView<T>& a,
                             const Matrix2xView<T>& b, 
                             Matrix2xView<T>& acc) {
   assert(a.cols() == b.rows());
-  assert(a.rows() == a.cols() && b.rows() == b.cols()); 
+  // Note: sub-blocks may be rectangular when n is odd, so only the
+  // dimension-compatibility asserts apply here.
   assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
   static constexpr auto BinetBaseBlockSize = 4uz;
@@ -209,26 +228,36 @@ void binet_matrix_mul_accum(const Matrix2xView<T>& a,
       return;
   }
 
-  const auto n_div_l = n / 2;
-  const auto n_div_r = n - n_div_l;
+  const auto n_rows = a.rows();
+  const auto n_inner = a.cols();
+  const auto n_cols = b.cols();
+
+  // Independent row / inner / column splits: sub-blocks are rectangular
+  // for odd dimensions, and each recursion level may split them differently.
+  const auto rows_l = n_rows / 2;
+  const auto rows_r = n_rows - rows_l;
+  const auto inner_l = n_inner / 2;
+  const auto inner_r = n_inner - inner_l;
+  const auto cols_l = n_cols / 2;
+  const auto cols_r = n_cols - cols_l;
 
   // Submatrices of C
-  auto c11 = Matrix2xView<T>(acc, 0, 0, n_div_l, n_div_l);
-  auto c12 = Matrix2xView<T>(acc, 0, n_div_l, n_div_l, n_div_r);
-  auto c21 = Matrix2xView<T>(acc, n_div_l, 0, n_div_r, n_div_l);
-  auto c22 = Matrix2xView<T>(acc, n_div_l, n_div_l, n_div_r, n_div_r);
+  auto c11 = Matrix2xView<T>(acc, 0, 0, rows_l, cols_l);
+  auto c12 = Matrix2xView<T>(acc, 0, cols_l, rows_l, cols_r);
+  auto c21 = Matrix2xView<T>(acc, rows_l, 0, rows_r, cols_l);
+  auto c22 = Matrix2xView<T>(acc, rows_l, cols_l, rows_r, cols_r);
 
   // Submatrices of A
-  const auto a11 = Matrix2xView<T>(a, 0, 0, n_div_l, n_div_l);
-  const auto a12 = Matrix2xView<T>(a, 0, n_div_l, n_div_l, n_div_r);
-  const auto a21 = Matrix2xView<T>(a, n_div_l, 0, n_div_r, n_div_l);
-  const auto a22 = Matrix2xView<T>(a, n_div_l, n_div_l, n_div_r, n_div_r);
+  const auto a11 = Matrix2xView<T>(a, 0, 0, rows_l, inner_l);
+  const auto a12 = Matrix2xView<T>(a, 0, inner_l, rows_l, inner_r);
+  const auto a21 = Matrix2xView<T>(a, rows_l, 0, rows_r, inner_l);
+  const auto a22 = Matrix2xView<T>(a, rows_l, inner_l, rows_r, inner_r);
 
   // Submatrices of B
-  const auto b11 = Matrix2xView<T>(b, 0, 0, n_div_l, n_div_l);
-  const auto b12 = Matrix2xView<T>(b, 0, n_div_l, n_div_l, n_div_r);
-  const auto b21 = Matrix2xView<T>(b, n_div_l, 0, n_div_r, n_div_l);
-  const auto b22 = Matrix2xView<T>(b, n_div_l, n_div_l, n_div_r, n_div_r);
+  const auto b11 = Matrix2xView<T>(b, 0, 0, inner_l, cols_l);
+  const auto b12 = Matrix2xView<T>(b, 0, cols_l, inner_l, cols_r);
+  const auto b21 = Matrix2xView<T>(b, inner_l, 0, inner_r, cols_l);
+  const auto b22 = Matrix2xView<T>(b, inner_l, cols_l, inner_r, cols_r);
   
   // Final stage: perform operations on submatrices
 
@@ -306,6 +335,10 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
     const auto b33 = Matrix2xView<T>(b, 2 * n_div, 2 * n_div, n_div, n_div);
 
     std::array<Matrix2xView<T>, 23> m;
+
+    // Mark current stack pointer, then return to that mark
+    const auto m_mark = mbuf.get_mark_pointer();
+    const auto uv_mark = uvbuf.get_mark_pointer();
 
     for (auto& mi : m) {
       mi = mbuf.query_matrix_view(n_div, n_div);
@@ -436,6 +469,8 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
   c33.matrix_add_accum_into({&m[5], &m[6], &m[7], &m[8], &m[22]});
 
   if (n_is3div) { // happy case, we are done
+    mbuf.revert_to_mark(m_mark);
+    uvbuf.revert_to_mark(uv_mark);
     return;
   }
 
@@ -476,6 +511,9 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
           acc(i, j) += sum;
       }
   }
+
+  mbuf.revert_to_mark(m_mark);
+  uvbuf.revert_to_mark(uv_mark);
 }
 
 }
