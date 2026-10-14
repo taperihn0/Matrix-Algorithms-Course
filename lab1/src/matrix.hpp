@@ -532,7 +532,7 @@ inline Matrix2xView<T>& Matrix2xView<T>::matrix_add2_accum_into(const Matrix2xVi
 
 template <typename T>
 inline Matrix2xView<T>& Matrix2xView<T>::matrix_sub2_accum_into(const Matrix2xView& a, const Matrix2xView& b) {
-    return matrix_sub_accum_into({&a, &b});
+    return matrix_addsub_accum_into({&a}, {&b});
 }
 
 template <typename T>

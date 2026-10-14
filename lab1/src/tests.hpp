@@ -118,6 +118,71 @@ static void test_matrix_mul_default() {
     CHECK(c(1, 1) == mfloat(154.0f));
 }
 
+// Integer-valued matrices keep all intermediate float arithmetic exact,
+// so results may be compared with == against the reference algorithm.
+static Matf make_pattern(Matf::size_type n, bool transposed = false) {
+    Matf m(n, n);
+    for (Matf::size_type i = 0; i < n; ++i) {
+        for (Matf::size_type j = 0; j < n; ++j) {
+            m(i, j) = static_cast<float>(transposed ? (j * n + i + 1) : (i * n + j + 1));
+        }
+    }
+    return m;
+}
+
+static Matf make_identity(Matf::size_type n) {
+    Matf m(n, n);
+    for (Matf::size_type i = 0; i < n; ++i) {
+        for (Matf::size_type j = 0; j < n; ++j) {
+            m(i, j) = (i == j) ? 1.0f : 0.0f;
+        }
+    }
+    return m;
+}
+
+static void test_matrix_mul_strassen() {
+    // 8x8: power-of-two size above the 4x4 base block -> exercises recursion
+    constexpr Matf::size_type n = 8;
+    const Matf a = make_pattern(n);
+    const Matf b = make_pattern(n, /*transposed=*/true);
+    const Matf id = make_identity(n);
+
+    const auto a_times_id = matrix_mul<mfloat>(a, id, enumMatMult::Strassen);
+    CHECK(a_times_id.rows() == n);
+    CHECK(a_times_id.cols() == n);
+    CHECK(a_times_id == a);
+
+    const auto expected = matrix_mul<mfloat>(a, b, enumMatMult::Default);
+    const auto got = matrix_mul<mfloat>(a, b, enumMatMult::Strassen);
+    CHECK(got == expected);
+}
+
+static void test_matrix_mul_laderman() {
+    // 9x9: divisible by 3 -> exercises the 3x3 block recursion
+    constexpr Matf::size_type n9 = 9;
+    const Matf a = make_pattern(n9);
+    const Matf b = make_pattern(n9, /*transposed=*/true);
+    const Matf id = make_identity(n9);
+
+    const auto a_times_id = matrix_mul<mfloat>(a, id, enumMatMult::Laderman);
+    CHECK(a_times_id.rows() == n9);
+    CHECK(a_times_id.cols() == n9);
+    CHECK(a_times_id == a);
+
+    const auto expected = matrix_mul<mfloat>(a, b, enumMatMult::Default);
+    const auto got = matrix_mul<mfloat>(a, b, enumMatMult::Laderman);
+    CHECK(got == expected);
+
+    // 8x8: not divisible by 3 -> exercises the remainder rows/columns path
+    constexpr Matf::size_type n8 = 8;
+    const Matf a8 = make_pattern(n8);
+    const Matf b8 = make_pattern(n8, /*transposed=*/true);
+
+    const auto expected8 = matrix_mul<mfloat>(a8, b8, enumMatMult::Default);
+    const auto got8 = matrix_mul<mfloat>(a8, b8, enumMatMult::Laderman);
+    CHECK(got8 == expected8);
+}
+
 static void test_matrix_mul_binet() {
     Matf a(8, 8);
     Matf id(8, 8);
@@ -173,6 +238,8 @@ inline int run_tests() {
     test_view();
     test_matrix_mul_default();
     test_matrix_mul_binet();
+    test_matrix_mul_strassen();
+    test_matrix_mul_laderman();
     test_range_check();
     return g_failures;
 }

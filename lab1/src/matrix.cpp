@@ -421,7 +421,7 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
   // C12 = M1 + M4 + M5 + M6 + M12 + M14 + M15
   c12.matrix_add_accum_into({&m[0], &m[3], &m[4], &m[5], &m[11], &m[13], &m[14]});
   // C13 = M6 + M7 + M9 + M11 + M14 + M16 + M18
-  c13.matrix_add_accum_into({&m[5], &m[6], &m[8], &m[10], &m[13], &m[15], &m[17]});
+  c13.matrix_add_accum_into({&m[5], &m[6], &m[8], &m[9], &m[13], &m[15], &m[17]});
   // C21 = M2 + M3 + M4 + M6 + M14 + M16 + M17
   c21.matrix_add_accum_into({&m[1], &m[2], &m[3], &m[5], &m[13], &m[15], &m[16]});
   // C22 = M2 + M4 + M5 + M6 + M20
