@@ -13,4 +13,5 @@ endif()
 add_executable(MatrixMulLabs
     src/main.cpp
     src/matrix.cpp
+    src/benchmark.cpp
 )

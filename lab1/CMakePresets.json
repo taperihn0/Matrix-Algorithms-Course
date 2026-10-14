@@ -4,6 +4,7 @@
     {
       "name": "debug",
       "displayName": "Debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -11,6 +12,7 @@
     {
       "name": "release",
       "displayName": "Release",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }

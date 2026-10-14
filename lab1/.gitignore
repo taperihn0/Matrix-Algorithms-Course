@@ -4,6 +4,8 @@ build_release/
 
 out/
 
+lab1/
+
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
