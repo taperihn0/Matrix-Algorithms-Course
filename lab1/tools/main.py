@@ -1,742 +1,508 @@
 """
-Skrypt do analizy i wizualizacji wydajności algorytmów mnożenia macierzy:
-- Standardowy (naiwny / O(n^3))
-- Binet (dziel i zwyciężaj / O(n^3))
-- Strassen (O(n^(log2(7))) ≈ O(n^2.807))
-- Laderman (O(n^(log3(23))) ≈ O(n^2.854))
+Generowanie wykresów zależności rozmiaru macierzy od liczby operacji i czasu
+dla algorytmów: Binet, Strassen, Laderman.
 
-Wczytuje dane ze statystyk:
-- ../stats/time/*.out (czasy wykonania w ms)
-- ../stats/op/*.out   (liczba operacji arytmetycznych: dodawanie, odejmowanie, mnożenie)
-Generuje czytelne, wielkoformatowe wykresy porównawcze z liniami trendu,
-pozwalające na empiryczne wyprowadzenie i weryfikację teoretycznej złożoności obliczeniowej.
+Dane z folderów stats/op/ i stats/time/.
+Każdy algorytm ma 5 prób (pliki 0–4), wyciągamy średnią.
 """
 
-from pathlib import Path
-import glob
+import os
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
-# ==============================================================================
-# Konfiguracja ścieżek i stałych
-# ==============================================================================
-REPO_ROOT = Path(__file__).resolve().parent.parent
-STATS_DIR = REPO_ROOT / "stats"
-OP_DIR = STATS_DIR / "op"
-TIME_DIR = STATS_DIR / "time"
-PLOTS_DIR = Path(__file__).resolve().parent / "plots"
+# ──────────────────────────────────────────────
+# Konfiguracja
+# ──────────────────────────────────────────────
+STATS_DIR = os.path.join(os.path.dirname(__file__), "..", "stats")
+PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
+os.makedirs(PLOTS_DIR, exist_ok=True)
 
-# Identyfikatory algorytmów w nazwach plików
-ALGORITHMS = ["standart", "binet", "strassen", "laderman"]
+ALGORITHMS = ["binet", "strassen", "laderman"]
+ALGO_LABELS = {"binet": "Binet", "strassen": "Strassen", "laderman": "Laderman"}
+ALGO_COLORS = {"binet": "#2196F3", "strassen": "#E91E63", "laderman": "#4CAF50"}
+ALGO_MARKERS = {"binet": "o", "strassen": "s", "laderman": "^"}
+N_TRIALS = 5
 
-ALG_NAMES = {
-    "standart": "Standardowy",
-    "binet": "Binet",
-    "strassen": "Strassen",
-    "laderman": "Laderman",
-}
-
-# Teoretyczne wykładniki złożoności obliczeniowej O(n^k)
-THEORETICAL_EXPONENTS = {
-    "standart": 3.0,
-    "binet": 3.0,
-    "strassen": np.log2(7.0),               # ≈ 2.80735
-    "laderman": np.log(23.0) / np.log(3.0), # ≈ 2.85404
-}
-
-ALG_COLORS = {
-    "standart": "#1f77b4",  # niebieski
-    "binet": "#2ca02c",     # zielony
-    "strassen": "#ff7f0e",  # pomarańczowy
-    "laderman": "#d62728",  # czerwony
-}
-
-ALG_MARKERS = {
-    "standart": "o",
-    "binet": "s",
-    "strassen": "^",
-    "laderman": "D",
-}
+# Styl wykresów
+plt.rcParams.update({
+    "figure.dpi": 150,
+    "font.size": 12,
+    "axes.titlesize": 15,
+    "axes.labelsize": 13,
+    "legend.fontsize": 11,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "axes.grid": True,
+    "grid.alpha": 0.3,
+    "grid.linestyle": "--",
+    "figure.facecolor": "white",
+    "axes.facecolor": "#FAFAFA",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+})
 
 
-# ==============================================================================
-# Funkcje ładowania danych do DataFrame
-# ==============================================================================
-def load_time_series(alg_name: str, time_dir: Path = TIME_DIR) -> pd.DataFrame:
+# ──────────────────────────────────────────────
+# Wczytywanie danych
+# ──────────────────────────────────────────────
+def load_op_data(algo: str) -> dict:
     """
-    Wczytuje dane czasowe dla danego algorytmu.
-    Obsługuje format <rozmiar>,<czas_ms>. W przypadku obecności wielu rund
-    (np. standart0.out, standart1.out, ...) uśrednia wyniki dla każdego rozmiaru.
-    """
-    pattern = str(time_dir / f"{alg_name}*.out")
-    files = sorted(glob.glob(pattern))
-
-    if not files:
-        raise FileNotFoundError(f"Nie znaleziono plików czasowych dla {alg_name} w {time_dir}")
-
-    dfs = []
-    for f in files:
-        # on_bad_lines='skip' pomija ewentualne urwane linie na końcu pliku
-        df = pd.read_csv(f, header=None, names=["size", "time_ms"], on_bad_lines="skip")
-        df["size"] = pd.to_numeric(df["size"], errors="coerce")
-        df["time_ms"] = pd.to_numeric(df["time_ms"], errors="coerce")
-        df = df.dropna().sort_values("size")
-        df["size"] = df["size"].astype(int)
-        dfs.append(df)
-
-    if len(dfs) == 1:
-        result_df = dfs[0].reset_index(drop=True)
-    else:
-        # Uśrednianie po rundach
-        combined = pd.concat(dfs, axis=0)
-        result_df = (
-            combined.groupby("size", as_index=False)["time_ms"]
-            .mean()
-            .sort_values("size")
-            .reset_index(drop=True)
-        )
-
-    return result_df
-
-
-def load_op_series(alg_name: str, op_dir: Path = OP_DIR) -> pd.DataFrame:
-    """
-    Wczytuje liczbę operacji arytmetycznych dla danego algorytmu.
-    Format pliku op: <add>,<sub>,<mul>,<divs>.
-    Zgodnie z poleceniem: pomija liczbę dzieleń (nie występują w benchmarku).
-    Wiersze odpowiadają kolejnym rozmiarom macierzy począwszy od n=2.
-    """
-    pattern = str(op_dir / f"{alg_name}*.out")
-    files = sorted(glob.glob(pattern))
-
-    if not files:
-        raise FileNotFoundError(f"Nie znaleziono plików operacji dla {alg_name} w {op_dir}")
-
-    dfs = []
-    for f in files:
-        # Wczytanie 4 kolumn (ostatnia to divs)
-        df = pd.read_csv(
-            f,
-            header=None,
-            names=["add", "sub", "mul", "divs"],
-            on_bad_lines="skip",
-        )
-        for col in ["add", "sub", "mul"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df.dropna(subset=["add", "sub", "mul"])
-        # Pomijamy liczbę dzieleń!
-        df = df[["add", "sub", "mul"]].copy()
-        dfs.append(df)
-
-    if len(dfs) == 1:
-        op_df = dfs[0].reset_index(drop=True)
-    else:
-        # W przypadku wielu rund uśredniamy wiersz po wierszu
-        min_len = min(len(d) for d in dfs)
-        trimmed = [d.iloc[:min_len].reset_index(drop=True) for d in dfs]
-        op_df = sum(trimmed) / len(trimmed)
-
-    # Indeks 0 odpowiada rozmiarowi n=2 (początek pętli benchmarku w C++)
-    op_df.insert(0, "size", np.arange(2, 2 + len(op_df), dtype=int))
-    # Wyliczenie operacji łącznych (bez dzieleń)
-    op_df["add_sub"] = op_df["add"] + op_df["sub"]
-    op_df["total_ops"] = op_df["add"] + op_df["sub"] + op_df["mul"]
-
-    return op_df
-
-
-def load_all_data():
-    """Wczytuje kompletne słowniki z danymi dla wszystkich algorytmów."""
-    time_data = {}
-    op_data = {}
-    for name in ALGORITHMS:
-        time_data[name] = load_time_series(name)
-        op_data[name] = load_op_series(name)
-    return time_data, op_data
-
-
-# ==============================================================================
-# Dopasowanie linii trendu i estymacja złożoności teoretycznej
-# ==============================================================================
-def fit_power_law(sizes: np.ndarray, values: np.ndarray, min_size: int = 10) -> dict:
-    """
-    Dopasowuje model potęgowy y = c * n^k w przestrzeni log-log:
-    log10(y) = k * log10(n) + log10(c)
+    Wczytuje dane operacji dla danego algorytmu ze wszystkich prób.
+    Zwraca dict z kluczami: sizes, add_ops, mul_ops, total_ops
+    (każda wartość to średnia z prób).
     
-    Współczynnik kierunkowy k to empiryczny wykładnik złożoności O(n^k).
-    Parametr min_size pozwala na odrzucenie małych rozmiarów n < 10,
-    gdzie narzuty bazowe lub małe bloki zaburzają asymptotykę.
+    Format pliku op: add_ops,add_trivial,mul_ops,mul_trivial
+    Linia i-ta odpowiada rozmiarowi macierzy i+2.
     """
-    mask = (sizes >= min_size) & (values > 0)
-    x_sub = sizes[mask]
-    y_sub = values[mask]
+    all_add = []
+    all_mul = []
 
-    if len(x_sub) < 3:
-        # Jeśli za mało punktów, dopasuj do wszystkich dostępnych dodatnich
-        mask = values > 0
-        x_sub = sizes[mask]
-        y_sub = values[mask]
+    for trial in range(N_TRIALS):
+        fpath = os.path.join(STATS_DIR, "op", f"{algo}{trial}.out")
+        if not os.path.exists(fpath) or os.path.getsize(fpath) == 0:
+            continue
+        data = np.loadtxt(fpath, delimiter=",")
+        add_ops = data[:, 0] + data[:, 1]   # add_ops + add_trivial
+        mul_ops = data[:, 2] + data[:, 3]   # mul_ops + mul_trivial
+        all_add.append(add_ops)
+        all_mul.append(mul_ops)
 
-    log_x = np.log10(x_sub)
-    log_y = np.log10(y_sub)
+    if not all_add:
+        return None
 
-    # Regresja liniowa w skali log10
-    slope, intercept = np.polyfit(log_x, log_y, 1)
-    k = slope
-    c = 10.0 ** intercept
+    # Upewnij się, że wymiary się zgadzają
+    min_len = min(len(a) for a in all_add)
+    all_add = np.array([a[:min_len] for a in all_add])
+    all_mul = np.array([m[:min_len] for m in all_mul])
 
-    # Obliczenie współczynnika determinacji R^2
-    y_pred_log = intercept + slope * log_x
-    ss_tot = np.sum((log_y - np.mean(log_y)) ** 2)
-    ss_res = np.sum((log_y - y_pred_log) ** 2)
-    r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
-
-    # Przewidywane wartości dla pełnego zakresu rozmiarów
-    y_fitted_full = c * (sizes.astype(float) ** k)
+    avg_add = np.mean(all_add, axis=0)
+    avg_mul = np.mean(all_mul, axis=0)
+    sizes = np.arange(2, 2 + min_len)
 
     return {
-        "k": k,
-        "c": c,
-        "r2": r2,
-        "fitted_curve": y_fitted_full,
+        "sizes": sizes,
+        "add_ops": avg_add,
+        "mul_ops": avg_mul,
+        "total_ops": avg_add + avg_mul,
     }
 
 
-# ==============================================================================
-# Tworzenie dużych i czytelnych wykresów
-# ==============================================================================
-def setup_plot_style():
-    """Ustawia estetyczny, duży i czytelny styl wykresów."""
-    plt.rcParams.update({
-        "font.size": 13,
-        "axes.labelsize": 15,
-        "axes.titlesize": 17,
-        "xtick.labelsize": 12,
-        "ytick.labelsize": 12,
-        "legend.fontsize": 11,
-        "legend.title_fontsize": 12,
-        "figure.titlesize": 19,
-        "lines.linewidth": 2.2,
-        "grid.linestyle": "--",
-        "grid.alpha": 0.5,
-    })
-
-
-def plot_time_comparison(time_data: dict, plots_dir: Path):
+def load_time_data(algo: str) -> dict:
     """
-    Wykres 1: Porównanie czasu wykonania algorytmów (skala liniowa oraz log-log z liniami trendu).
+    Wczytuje dane czasowe dla danego algorytmu ze wszystkich prób.
+    Zwraca dict z kluczami: sizes, time (średnia z prób).
+    
+    Format pliku time: matrix_size,time_seconds
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+    all_times = []
+    sizes_ref = None
 
-    fits = {}
-    for name in ALGORITHMS:
-        df = time_data[name]
-        label = ALG_NAMES[name]
-        color = ALG_COLORS[name]
-        marker = ALG_MARKERS[name]
-        theo_k = THEORETICAL_EXPONENTS[name]
+    for trial in range(N_TRIALS):
+        fpath = os.path.join(STATS_DIR, "time", f"{algo}{trial}.out")
+        if not os.path.exists(fpath) or os.path.getsize(fpath) == 0:
+            continue
+        data = np.loadtxt(fpath, delimiter=",")
+        sizes = data[:, 0].astype(int)
+        times = data[:, 1]
 
-        fit = fit_power_law(df["size"].to_numpy(), df["time_ms"].to_numpy(), min_size=15)
-        fits[name] = fit
+        if sizes_ref is None:
+            sizes_ref = sizes
+        all_times.append(times)
 
-        # Rysowanie punktów / linii danych (z krokiem markera dla czytelności)
-        markevery = max(1, len(df) // 25)
-        ax1.plot(
-            df["size"],
-            df["time_ms"],
-            color=color,
-            marker=marker,
-            markevery=markevery,
-            markersize=6,
-            alpha=0.85,
-            label=f"{label} (dane)",
-        )
-        # Linia trendu w skali liniowej
-        ax1.plot(
-            df["size"],
-            fit["fitted_curve"],
-            color=color,
-            linestyle="--",
-            alpha=0.9,
-            label=f"{label}: trend ~ O(n^{fit['k']:.2f}) [R²={fit['r2']:.4f}]",
-        )
+    if not all_times:
+        return None
 
-        # Skala log-log
-        ax2.loglog(
-            df["size"],
-            df["time_ms"],
-            color=color,
-            marker=marker,
-            markevery=markevery,
-            markersize=6,
-            alpha=0.85,
-            label=f"{label} (dane)",
-        )
-        ax2.loglog(
-            df["size"],
-            fit["fitted_curve"],
-            color=color,
-            linestyle="--",
-            alpha=0.9,
-            label=f"{label}: nachylenie k={fit['k']:.2f} (teoria: {theo_k:.2f})",
-        )
+    min_len = min(len(t) for t in all_times)
+    all_times = np.array([t[:min_len] for t in all_times])
+    avg_time = np.mean(all_times, axis=0)
 
-    # Konfiguracja osi lewego wykresu (skala liniowa)
-    ax1.set_title("Czas wykonania w skali liniowej z liniami trendu", pad=12, fontweight="bold")
-    ax1.set_xlabel("Rozmiar macierzy n (wymiar macierzy n × n)")
-    ax1.set_ylabel("Czas wykonania T(n) [ms]")
-    ax1.grid(True)
-    ax1.legend(loc="upper left", frameon=True, framealpha=0.9)
-
-    # Konfiguracja osi prawego wykresu (skala log-log)
-    ax2.set_title("Czas wykonania w skali log-log (nachylenie = wykładnik O(n^k))", pad=12, fontweight="bold")
-    ax2.set_xlabel("Rozmiar macierzy n [skala log₁₀]")
-    ax2.set_ylabel("Czas wykonania T(n) [ms] [skala log₁₀]")
-    ax2.grid(True, which="both")
-    ax2.legend(loc="upper left", frameon=True, framealpha=0.9)
-
-    fig.suptitle("Porównanie czasu wykonania algorytmów mnożenia macierzy", fontsize=19, y=0.98, fontweight="bold")
-    plt.tight_layout()
-    output_path = plots_dir / "01_porownanie_czasu_wykonania.png"
-    plt.savefig(output_path, dpi=300)
-    print(f"[ZAPISANO] Wykres czasu wykonania: {output_path}")
-    return fits
+    return {
+        "sizes": sizes_ref[:min_len],
+        "time": avg_time,
+    }
 
 
-def plot_total_operations(op_data: dict, plots_dir: Path):
+# ──────────────────────────────────────────────
+# Funkcje pomocnicze dla wykresów
+# ──────────────────────────────────────────────
+def downsample(x, y, max_points=200):
+    """Próbkowanie danych dla czytelności (co N-ty punkt)."""
+    if len(x) <= max_points:
+        return x, y
+    step = max(1, len(x) // max_points)
+    return x[::step], y[::step]
+
+
+def format_large_numbers(ax, axis="y"):
+    """Formatowanie dużych liczb na osiach."""
+    if axis == "y":
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(
+            lambda x, _: f"{x/1e6:.1f}M" if x >= 1e6
+            else (f"{x/1e3:.0f}k" if x >= 1e3 else f"{x:.0f}")
+        ))
+    else:
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(
+            lambda x, _: f"{x/1e6:.1f}M" if x >= 1e6
+            else (f"{x/1e3:.0f}k" if x >= 1e3 else f"{x:.0f}")
+        ))
+
+
+# ──────────────────────────────────────────────
+# Generowanie wykresów
+# ──────────────────────────────────────────────
+def plot_ops_comparison():
     """
-    Wykres 2: Porównanie całkowitej liczby operacji arytmetycznych (dodawanie + odejmowanie + mnożenie).
-    Bez dzieleń. Skala liniowa i log-log z liniami trendu.
+    Wykres 1: Porównanie całkowitej liczby operacji (add + mul)
+    dla wszystkich algorytmów.
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    fits = {}
-    for name in ALGORITHMS:
-        df = op_data[name]
-        label = ALG_NAMES[name]
-        color = ALG_COLORS[name]
-        marker = ALG_MARKERS[name]
-        theo_k = THEORETICAL_EXPONENTS[name]
+    for algo in ALGORITHMS:
+        data = load_op_data(algo)
+        if data is None:
+            continue
+        sx, sy = downsample(data["sizes"], data["total_ops"])
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo],
+                label=f"{ALGO_LABELS[algo]} (średnia z {N_TRIALS} prób)",
+                linewidth=2, alpha=0.9)
 
-        fit = fit_power_law(df["size"].to_numpy(), df["total_ops"].to_numpy(), min_size=10)
-        fits[name] = fit
-
-        markevery = max(1, len(df) // 25)
-        ax1.plot(
-            df["size"],
-            df["total_ops"],
-            color=color,
-            marker=marker,
-            markevery=markevery,
-            markersize=6,
-            alpha=0.85,
-            label=f"{label} (dane)",
-        )
-        ax1.plot(
-            df["size"],
-            fit["fitted_curve"],
-            color=color,
-            linestyle="--",
-            alpha=0.9,
-            label=f"{label}: trend ~ O(n^{fit['k']:.3f}) [R²={fit['r2']:.4f}]",
-        )
-
-        ax2.loglog(
-            df["size"],
-            df["total_ops"],
-            color=color,
-            marker=marker,
-            markevery=markevery,
-            markersize=6,
-            alpha=0.85,
-            label=f"{label} (dane)",
-        )
-        ax2.loglog(
-            df["size"],
-            fit["fitted_curve"],
-            color=color,
-            linestyle="--",
-            alpha=0.9,
-            label=f"{label}: k={fit['k']:.3f} (teoria: {theo_k:.3f})",
-        )
-
-    ax1.set_title("Liczba operacji arytmetycznych (skala liniowa)", pad=12, fontweight="bold")
-    ax1.set_xlabel("Rozmiar macierzy n (wymiar macierzy n × n)")
-    ax1.set_ylabel("Całkowita liczba operacji (add + sub + mul)")
-    ax1.grid(True)
-    ax1.legend(loc="upper left", frameon=True, framealpha=0.9)
-
-    ax2.set_title("Liczba operacji w skali log-log (nachylenie prostej = złożoność)", pad=12, fontweight="bold")
-    ax2.set_xlabel("Rozmiar macierzy n [skala log₁₀]")
-    ax2.set_ylabel("Całkowita liczba operacji [skala log₁₀]")
-    ax2.grid(True, which="both")
-    ax2.legend(loc="upper left", frameon=True, framealpha=0.9)
-
-    fig.suptitle(
-        "Porównanie całkowitej liczby operacji arytmetycznych (z pominięciem dzieleń)",
-        fontsize=19,
-        y=0.98,
-        fontweight="bold",
-    )
-    plt.tight_layout()
-    output_path = plots_dir / "02_porownanie_calkowitej_liczby_operacji.png"
-    plt.savefig(output_path, dpi=300)
-    print(f"[ZAPISANO] Wykres liczby operacji: {output_path}")
-    return fits
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Całkowita liczba operacji (dodawania + mnożenia)")
+    ax.set_title("Porównanie całkowitej liczby operacji — średnia z prób")
+    ax.legend(loc="upper left", framealpha=0.9)
+    format_large_numbers(ax)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "01_calkowita_liczba_operacji.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 01_calkowita_liczba_operacji.png")
 
 
-def plot_multiplications(op_data: dict, plots_dir: Path):
+def plot_add_mul_separate():
     """
-    Wykres 3: Porównanie liczby operacji mnożenia (mul).
-    Pozwala uwidocznić kluczową redukcję mnożeń algorytmów Strassena (7 zamiast 8)
-    oraz Ladermana (23 zamiast 27 dla bloków 3x3).
+    Wykres 2: Oddzielne porównanie dodawań i mnożeń.
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+    fig, axes = plt.subplots(1, 2, figsize=(18, 8))
 
-    fits = {}
-    for name in ALGORITHMS:
-        df = op_data[name]
-        label = ALG_NAMES[name]
-        color = ALG_COLORS[name]
-        marker = ALG_MARKERS[name]
-        theo_k = THEORETICAL_EXPONENTS[name]
+    # Dodawania
+    ax = axes[0]
+    for algo in ALGORITHMS:
+        data = load_op_data(algo)
+        if data is None:
+            continue
+        sx, sy = downsample(data["sizes"], data["add_ops"])
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo],
+                label=ALGO_LABELS[algo],
+                linewidth=2, alpha=0.9)
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Liczba dodawań / odejmowań")
+    ax.set_title("Porównanie liczby dodawań / odejmowań")
+    ax.legend(loc="upper left", framealpha=0.9)
+    format_large_numbers(ax)
 
-        fit = fit_power_law(df["size"].to_numpy(), df["mul"].to_numpy(), min_size=10)
-        fits[name] = fit
+    # Mnożenia
+    ax = axes[1]
+    for algo in ALGORITHMS:
+        data = load_op_data(algo)
+        if data is None:
+            continue
+        sx, sy = downsample(data["sizes"], data["mul_ops"])
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo],
+                label=ALGO_LABELS[algo],
+                linewidth=2, alpha=0.9)
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Liczba mnożeń")
+    ax.set_title("Porównanie liczby mnożeń")
+    ax.legend(loc="upper left", framealpha=0.9)
+    format_large_numbers(ax)
 
-        markevery = max(1, len(df) // 25)
-        ax1.plot(
-            df["size"],
-            df["mul"],
-            color=color,
-            marker=marker,
-            markevery=markevery,
-            markersize=6,
-            alpha=0.85,
-            label=f"{label} (dane)",
-        )
-        ax1.plot(
-            df["size"],
-            fit["fitted_curve"],
-            color=color,
-            linestyle="--",
-            alpha=0.9,
-            label=f"{label}: trend ~ O(n^{fit['k']:.3f})",
-        )
-
-        ax2.loglog(
-            df["size"],
-            df["mul"],
-            color=color,
-            marker=marker,
-            markevery=markevery,
-            markersize=6,
-            alpha=0.85,
-            label=f"{label} (dane)",
-        )
-        ax2.loglog(
-            df["size"],
-            fit["fitted_curve"],
-            color=color,
-            linestyle="--",
-            alpha=0.9,
-            label=f"{label}: k={fit['k']:.3f} (teoria: {theo_k:.3f})",
-        )
-
-    ax1.set_title("Liczba operacji mnożenia (skala liniowa)", pad=12, fontweight="bold")
-    ax1.set_xlabel("Rozmiar macierzy n (wymiar macierzy n × n)")
-    ax1.set_ylabel("Liczba operacji mnożenia (mul)")
-    ax1.grid(True)
-    ax1.legend(loc="upper left", frameon=True, framealpha=0.9)
-
-    ax2.set_title("Liczba mnożeń w skali log-log (redukcja Strassena i Ladermana)", pad=12, fontweight="bold")
-    ax2.set_xlabel("Rozmiar macierzy n [skala log₁₀]")
-    ax2.set_ylabel("Liczba operacji mnożenia [skala log₁₀]")
-    ax2.grid(True, which="both")
-    ax2.legend(loc="upper left", frameon=True, framealpha=0.9)
-
-    fig.suptitle("Porównanie liczby operacji mnożenia w algorytmach", fontsize=19, y=0.98, fontweight="bold")
-    plt.tight_layout()
-    output_path = plots_dir / "03_porownanie_liczby_mnozen.png"
-    plt.savefig(output_path, dpi=300)
-    print(f"[ZAPISANO] Wykres liczby mnożeń: {output_path}")
-    return fits
+    fig.suptitle("Dekompozycja operacji — średnia z prób", fontsize=16, y=1.02)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "02_dodawania_vs_mnozenia.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 02_dodawania_vs_mnozenia.png")
 
 
-def plot_operations_breakdown(op_data: dict, plots_dir: Path):
+def plot_ops_per_algorithm():
     """
-    Wykres 4: Szczegółowa dekompozycja operacji dla każdego algorytmu (siatka 2x2).
-    Prezentuje: dodawanie, odejmowanie, mnożenie oraz sumę (bez dzieleń).
+    Wykres 3: Dla każdego algorytmu osobny wykres z dekompozycją
+    na dodawania i mnożenia (stacked area).
     """
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12), sharex=True)
-    axes_flat = axes.flatten()
+    algos_with_data = [(a, load_op_data(a)) for a in ALGORITHMS]
+    algos_with_data = [(a, d) for a, d in algos_with_data if d is not None]
 
-    for ax, name in zip(axes_flat, ALGORITHMS):
-        df = op_data[name]
-        label = ALG_NAMES[name]
-        markevery = max(1, len(df) // 20)
+    n = len(algos_with_data)
+    if n == 0:
+        return
 
-        # Dodawanie
-        ax.plot(
-            df["size"],
-            df["add"],
-            color="#2ca02c",
-            marker="o",
-            markevery=markevery,
-            markersize=5,
-            label="Dodawanie (add)",
-        )
-        # Odejmowanie - rysowane tylko jeśli występuje (> 0)
-        if df["sub"].sum() > 0:
-            ax.plot(
-                df["size"],
-                df["sub"],
-                color="#e377c2",
-                marker="s",
-                markevery=markevery,
-                markersize=5,
-                label="Odejmowanie (sub)",
-            )
-        # Mnożenie
-        ax.plot(
-            df["size"],
-            df["mul"],
-            color="#ff7f0e",
-            marker="^",
-            markevery=markevery,
-            markersize=5,
-            label="Mnożenie (mul)",
-        )
-        # Całkowita suma operacji
-        ax.plot(
-            df["size"],
-            df["total_ops"],
-            color="#1f77b4",
-            linestyle="--",
-            label="Suma operacji (bez dzieleń)",
-        )
+    fig, axes = plt.subplots(1, n, figsize=(7 * n, 7))
+    if n == 1:
+        axes = [axes]
 
-        theo = THEORETICAL_EXPONENTS[name]
-        ax.set_title(f"Model: {label} (złożoność teoretyczna: O(n^{theo:.3f}))", pad=10, fontweight="bold")
-        ax.set_xlabel("Rozmiar macierzy n (n × n)")
+    for ax, (algo, data) in zip(axes, algos_with_data):
+        sx_add, sy_add = downsample(data["sizes"], data["add_ops"])
+        sx_mul, sy_mul = downsample(data["sizes"], data["mul_ops"])
+
+        ax.fill_between(sx_add, 0, sy_add,
+                        alpha=0.35, color="#FF9800", label="Dodawania / odejmowania")
+        ax.fill_between(sx_mul, 0, sy_mul,
+                        alpha=0.35, color="#9C27B0", label="Mnożenia")
+        ax.plot(sx_add, sy_add, color="#FF9800", linewidth=1.5)
+        ax.plot(sx_mul, sy_mul, color="#9C27B0", linewidth=1.5)
+
+        ax.set_xlabel("Rozmiar macierzy (n)")
         ax.set_ylabel("Liczba operacji")
-        ax.grid(True)
-        ax.legend(loc="upper left", frameon=True, framealpha=0.9)
+        ax.set_title(f"{ALGO_LABELS[algo]}")
+        ax.legend(loc="upper left", framealpha=0.9)
+        format_large_numbers(ax)
 
-    fig.suptitle(
-        "Dekompozycja typów operacji arytmetycznych dla poszczególnych algorytmów (bez dzieleń)",
-        fontsize=18,
-        y=0.99,
-        fontweight="bold",
-    )
-    plt.tight_layout()
-    output_path = plots_dir / "04_dekompozycja_operacji_na_algorytm.png"
-    plt.savefig(output_path, dpi=300)
-    print(f"[ZAPISANO] Wykres dekompozycji operacji: {output_path}")
+    fig.suptitle("Dekompozycja operacji na algorytm — średnia z prób", fontsize=16, y=1.02)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "03_dekompozycja_operacji_na_algorytm.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 03_dekompozycja_operacji_na_algorytm.png")
 
 
-def plot_complexity_summary(time_fits: dict, op_fits: dict, plots_dir: Path):
+def plot_time_comparison():
     """
-    Wykres 5: Podsumowanie wykładników złożoności O(n^k):
-    Teoretyczna vs Empiryczna z operacji vs Empiryczna z pomiarów czasu.
+    Wykres 4: Porównanie czasu wykonania dla wszystkich algorytmów.
     """
-    fig, ax = plt.subplots(figsize=(14, 7))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    names = [ALG_NAMES[a] for a in ALGORITHMS]
-    theo_vals = [THEORETICAL_EXPONENTS[a] for a in ALGORITHMS]
-    op_vals = [op_fits[a]["k"] for a in ALGORITHMS]
-    time_vals = [time_fits[a]["k"] for a in ALGORITHMS]
+    for algo in ALGORITHMS:
+        data = load_time_data(algo)
+        if data is None:
+            continue
+        sx, sy = downsample(data["sizes"], data["time"])
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo],
+                label=f"{ALGO_LABELS[algo]} (średnia z {N_TRIALS} prób)",
+                linewidth=2, alpha=0.9)
 
-    x = np.arange(len(names))
-    width = 0.25
-
-    rects1 = ax.bar(x - width, theo_vals, width, label="Złożoność teoretyczna k", color="#1f77b4", alpha=0.85)
-    rects2 = ax.bar(x, op_vals, width, label="Złożoność empiryczna (operacje) k", color="#2ca02c", alpha=0.85)
-    rects3 = ax.bar(x + width, time_vals, width, label="Złożoność empiryczna (czas) k", color="#ff7f0e", alpha=0.85)
-
-    ax.set_title("Porównanie wykładników złożoności obliczeniowej O(n^k)", pad=14, fontweight="bold")
-    ax.set_ylabel("Wartość wykładnika potęgowego k")
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, fontweight="bold")
-    ax.set_ylim(0, 3.8)
-    ax.grid(True, axis="y")
-    ax.legend(loc="upper right", frameon=True, framealpha=0.9)
-
-    # Etykiety wartości nad słupkami
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                f"{height:.3f}",
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 4),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=11,
-                fontweight="bold",
-            )
-
-    autolabel(rects1)
-    autolabel(rects2)
-    autolabel(rects3)
-
-    plt.tight_layout()
-    output_path = plots_dir / "05_porownanie_zlozonosci_teoretycznej_i_empirycznej.png"
-    plt.savefig(output_path, dpi=300)
-    print(f"[ZAPISANO] Wykres podsumowania złożoności: {output_path}")
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Czas wykonania [s]")
+    ax.set_title("Porównanie czasu wykonania — średnia z prób")
+    ax.legend(loc="upper left", framealpha=0.9)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "04_czas_wykonania.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 04_czas_wykonania.png")
 
 
-def plot_relative_efficiency(time_data: dict, op_data: dict, plots_dir: Path):
+def plot_time_log_scale():
     """
-    Wykres 6: Względna efektywność algorytmów w odniesieniu do algorytmu standardowego.
-    Lewy panel: Stosunek liczby operacji (Ops_alg / Ops_standard).
-    Prawy panel: Stosunek czasu wykonania (Time_alg / Time_standard).
-    Pokazuje punkty przecięcia (crossover points) oraz rzeczywisty zysk.
+    Wykres 5: Czas wykonania w skali logarytmicznej (log-log).
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    base_op = op_data["standart"].set_index("size")["total_ops"]
-    base_time = time_data["standart"].set_index("size")["time_ms"]
+    for algo in ALGORITHMS:
+        data = load_time_data(algo)
+        if data is None:
+            continue
+        sx, sy = downsample(data["sizes"], data["time"])
+        # Filtruj zerowe wartości dla log scale
+        mask = sy > 0
+        ax.plot(sx[mask], sy[mask],
+                color=ALGO_COLORS[algo],
+                label=ALGO_LABELS[algo],
+                linewidth=2, alpha=0.9)
 
-    for name in ["binet", "strassen", "laderman"]:
-        label = ALG_NAMES[name]
-        color = ALG_COLORS[name]
-        marker = ALG_MARKERS[name]
-
-        # Względna liczba operacji
-        op_s = op_data[name].set_index("size")["total_ops"]
-        common_sizes_op = op_s.index.intersection(base_op.index)
-        ratio_op = op_s.loc[common_sizes_op] / base_op.loc[common_sizes_op]
-
-        markevery_op = max(1, len(common_sizes_op) // 25)
-        ax1.plot(
-            common_sizes_op,
-            ratio_op,
-            color=color,
-            marker=marker,
-            markevery=markevery_op,
-            markersize=6,
-            label=f"{label} / Standard",
-        )
-
-        # Względny czas wykonania
-        time_s = time_data[name].set_index("size")["time_ms"]
-        common_sizes_time = time_s.index.intersection(base_time.index)
-        ratio_time = time_s.loc[common_sizes_time] / base_time.loc[common_sizes_time]
-
-        markevery_time = max(1, len(common_sizes_time) // 25)
-        ax2.plot(
-            common_sizes_time,
-            ratio_time,
-            color=color,
-            marker=marker,
-            markevery=markevery_time,
-            markersize=6,
-            label=f"{label} / Standard",
-        )
-
-    # Linia odniesienia 1.0 (poziom algorytmu standardowego)
-    ax1.axhline(1.0, color="gray", linestyle="--", linewidth=1.5, label="Standard = 1.0")
-    ax1.set_title("Stosunek liczby operacji do algorytmu Standardowego", pad=12, fontweight="bold")
-    ax1.set_xlabel("Rozmiar macierzy n (wymiary n × n)")
-    ax1.set_ylabel("Współczynnik (Ops_alg / Ops_standard)")
-    ax1.grid(True)
-    ax1.legend(loc="best", frameon=True, framealpha=0.9)
-
-    ax2.axhline(1.0, color="gray", linestyle="--", linewidth=1.5, label="Standard = 1.0")
-    ax2.set_title("Stosunek czasu wykonania do algorytmu Standardowego", pad=12, fontweight="bold")
-    ax2.set_xlabel("Rozmiar macierzy n (wymiary n × n)")
-    ax2.set_ylabel("Współczynnik (Time_alg / Time_standard)")
-    ax2.grid(True)
-    ax2.legend(loc="best", frameon=True, framealpha=0.9)
-
-    fig.suptitle(
-        "Efektywność względna algorytmów wobec metody Standardowej (wartości < 1.0 oznaczają przewagę)",
-        fontsize=18,
-        y=0.99,
-        fontweight="bold",
-    )
-    plt.tight_layout()
-    output_path = plots_dir / "06_stosunek_wzgledem_standardowego.png"
-    plt.savefig(output_path, dpi=300)
-    print(f"[ZAPISANO] Wykres efektywności względnej: {output_path}")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Czas wykonania [s]")
+    ax.set_title("Porównanie czasu wykonania (skala log-log) — średnia z prób")
+    ax.legend(loc="upper left", framealpha=0.9)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "05_czas_log_scale.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 05_czas_log_scale.png")
 
 
-# ==============================================================================
-# Wypisanie podsumowania w konsoli
-# ==============================================================================
-def print_summary_table(time_fits: dict, op_fits: dict, mul_fits: dict):
-    """Wyświetla estetyczną tabelę podsumowującą złożoność teoretyczną i empiryczną."""
-    header = (
-        f"{'Algorytm':<14} | "
-        f"{'Teoria O(n^k)':<13} | "
-        f"{'Empiryczne (op) k':<18} | "
-        f"{'R² (op)':<8} | "
-        f"{'Empiryczne (mul) k':<19} | "
-        f"{'Empiryczne (czas) k':<20} | "
-        f"{'R² (czas)':<8}"
-    )
-    separator = "-" * len(header)
-    print("\n" + "=" * len(header))
-    print("PODSUMOWANIE ZŁOŻONOŚCI OBLICZENIOWEJ MODELI (WYPROWADZENIE TEORETYCZNE VS EMPIRYCZNE)")
-    print("=" * len(header))
-    print(header)
-    print(separator)
+def plot_ops_log_scale():
+    """
+    Wykres 6: Całkowita liczba operacji w skali log-log.
+    """
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    for name in ALGORITHMS:
-        display = ALG_NAMES[name]
-        theo = THEORETICAL_EXPONENTS[name]
-        op_fit = op_fits[name]
-        mul_fit = mul_fits[name]
-        t_fit = time_fits[name]
+    for algo in ALGORITHMS:
+        data = load_op_data(algo)
+        if data is None:
+            continue
+        sx, sy = downsample(data["sizes"], data["total_ops"])
+        mask = sy > 0
+        ax.plot(sx[mask], sy[mask],
+                color=ALGO_COLORS[algo],
+                label=ALGO_LABELS[algo],
+                linewidth=2, alpha=0.9)
 
-        print(
-            f"{display:<14} | "
-            f"O(n^{theo:<6.3f}) | "
-            f"O(n^{op_fit['k']:<6.3f})       | "
-            f"{op_fit['r2']:<8.4f} | "
-            f"O(n^{mul_fit['k']:<6.3f})        | "
-            f"O(n^{t_fit['k']:<6.3f})         | "
-            f"{t_fit['r2']:<8.4f}"
-        )
-    print("=" * len(header) + "\n")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Całkowita liczba operacji")
+    ax.set_title("Porównanie liczby operacji (skala log-log) — średnia z prób")
+    ax.legend(loc="upper left", framealpha=0.9)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "06_operacje_log_scale.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 06_operacje_log_scale.png")
 
 
-# ==============================================================================
-# Główna funkcja wykonawcza
-# ==============================================================================
-def main():
-    print("Rozpoczęcie ładowania danych ze statystyk /stats/time oraz /stats/op...")
-    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    setup_plot_style()
+def plot_ratio_vs_binet():
+    """
+    Wykres 7: Stosunek liczby operacji Strassena i Ladermana
+    względem Bineta.
+    """
+    binet_data = load_op_data("binet")
+    if binet_data is None:
+        return
 
-    time_data, op_data = load_all_data()
-    print("Wszystkie dane zostały pomyślnie załadowane do DataFrame'ów.")
-    for name in ALGORITHMS:
-        print(f"  - {ALG_NAMES[name]}: op={len(op_data[name])} próbek (n={op_data[name]['size'].min()}..{op_data[name]['size'].max()}), "
-              f"time={len(time_data[name])} próbek (n={time_data[name]['size'].min()}..{time_data[name]['size'].max()})")
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    print("\nGenerowanie wykresów o wysokiej czytelności i dopasowywanie linii trendów...")
-    time_fits = plot_time_comparison(time_data, PLOTS_DIR)
-    op_fits = plot_total_operations(op_data, PLOTS_DIR)
-    mul_fits = plot_multiplications(op_data, PLOTS_DIR)
-    plot_operations_breakdown(op_data, PLOTS_DIR)
-    plot_complexity_summary(time_fits, op_fits, PLOTS_DIR)
-    plot_relative_efficiency(time_data, op_data, PLOTS_DIR)
+    for algo in ["strassen", "laderman"]:
+        data = load_op_data(algo)
+        if data is None:
+            continue
+        min_len = min(len(data["total_ops"]), len(binet_data["total_ops"]))
+        ratio = data["total_ops"][:min_len] / binet_data["total_ops"][:min_len]
+        sizes = data["sizes"][:min_len]
+        sx, sy = downsample(sizes, ratio)
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo],
+                label=f"{ALGO_LABELS[algo]} / Binet",
+                linewidth=2, alpha=0.9)
 
-    print_summary_table(time_fits, op_fits, mul_fits)
-    print(f"Wszystkie wykresy zapisano w katalogu: {PLOTS_DIR}")
+    ax.axhline(y=1.0, color="gray", linestyle=":", linewidth=1, alpha=0.7, label="Binet (ref = 1.0)")
+    ax.set_xlabel("Rozmiar macierzy (n)")
+    ax.set_ylabel("Stosunek operacji (algorytm / Binet)")
+    ax.set_title("Stosunek całkowitej liczby operacji względem algorytmu Bineta")
+    ax.legend(loc="best", framealpha=0.9)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "07_stosunek_operacji_vs_binet.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 07_stosunek_operacji_vs_binet.png")
 
-    # Wyświetlenie interaktywne jeśli sesja wspiera GUI
-    try:
-        import matplotlib
-        if matplotlib.get_backend().lower() not in ["agg", "template"]:
-            plt.show()
-    except Exception:
-        pass
+
+def plot_individual_trials_ops():
+    """
+    Wykres 8: Dla każdego algorytmu — poszczególne próby + średnia
+    (całkowita liczba operacji). Średnia wyróżniona grubszą linią.
+    """
+    algos_with_data = []
+    for algo in ALGORITHMS:
+        avg_data = load_op_data(algo)
+        if avg_data is None:
+            continue
+        algos_with_data.append((algo, avg_data))
+
+    n = len(algos_with_data)
+    if n == 0:
+        return
+
+    fig, axes = plt.subplots(1, n, figsize=(7 * n, 7))
+    if n == 1:
+        axes = [axes]
+
+    for ax, (algo, avg_data) in zip(axes, algos_with_data):
+        # Poszczególne próby (cienkie, półprzezroczyste)
+        for trial in range(N_TRIALS):
+            fpath = os.path.join(STATS_DIR, "op", f"{algo}{trial}.out")
+            if not os.path.exists(fpath) or os.path.getsize(fpath) == 0:
+                continue
+            raw = np.loadtxt(fpath, delimiter=",")
+            total = raw[:, 0] + raw[:, 1] + raw[:, 2] + raw[:, 3]
+            sizes = np.arange(2, 2 + len(total))
+            sx, sy = downsample(sizes, total)
+            ax.plot(sx, sy,
+                    color=ALGO_COLORS[algo], alpha=0.2, linewidth=0.8,
+                    label=f"Próba {trial}" if trial == 0 else None)
+
+        # Średnia (gruba linia)
+        sx, sy = downsample(avg_data["sizes"], avg_data["total_ops"])
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo], linewidth=3, alpha=1.0,
+                label="Średnia", zorder=5)
+
+        ax.set_xlabel("Rozmiar macierzy (n)")
+        ax.set_ylabel("Całkowita liczba operacji")
+        ax.set_title(f"{ALGO_LABELS[algo]}")
+        ax.legend(loc="upper left", framealpha=0.9)
+        format_large_numbers(ax)
+
+    fig.suptitle("Próby vs. średnia — całkowita liczba operacji", fontsize=16, y=1.02)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "08_proby_vs_srednia_operacje.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 08_proby_vs_srednia_operacje.png")
 
 
+def plot_individual_trials_time():
+    """
+    Wykres 9: Dla każdego algorytmu — poszczególne próby + średnia
+    (czas wykonania). Średnia wyróżniona grubszą linią.
+    """
+    algos_with_data = []
+    for algo in ALGORITHMS:
+        avg_data = load_time_data(algo)
+        if avg_data is None:
+            continue
+        algos_with_data.append((algo, avg_data))
+
+    n = len(algos_with_data)
+    if n == 0:
+        return
+
+    fig, axes = plt.subplots(1, n, figsize=(7 * n, 7))
+    if n == 1:
+        axes = [axes]
+
+    for ax, (algo, avg_data) in zip(axes, algos_with_data):
+        for trial in range(N_TRIALS):
+            fpath = os.path.join(STATS_DIR, "time", f"{algo}{trial}.out")
+            if not os.path.exists(fpath) or os.path.getsize(fpath) == 0:
+                continue
+            raw = np.loadtxt(fpath, delimiter=",")
+            sizes = raw[:, 0].astype(int)
+            times = raw[:, 1]
+            sx, sy = downsample(sizes, times)
+            ax.plot(sx, sy,
+                    color=ALGO_COLORS[algo], alpha=0.2, linewidth=0.8,
+                    label=f"Próba {trial}" if trial == 0 else None)
+
+        sx, sy = downsample(avg_data["sizes"], avg_data["time"])
+        ax.plot(sx, sy,
+                color=ALGO_COLORS[algo], linewidth=3, alpha=1.0,
+                label="Średnia", zorder=5)
+
+        ax.set_xlabel("Rozmiar macierzy (n)")
+        ax.set_ylabel("Czas wykonania [s]")
+        ax.set_title(f"{ALGO_LABELS[algo]}")
+        ax.legend(loc="upper left", framealpha=0.9)
+
+    fig.suptitle("Próby vs. średnia — czas wykonania", fontsize=16, y=1.02)
+    fig.tight_layout()
+    fig.savefig(os.path.join(PLOTS_DIR, "09_proby_vs_srednia_czas.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("  ✓ 09_proby_vs_srednia_czas.png")
+
+
+# ──────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────
 if __name__ == "__main__":
-    main()
+    print("Generowanie wykresów...\n")
+
+    plot_ops_comparison()
+    plot_add_mul_separate()
+    plot_ops_per_algorithm()
+    plot_time_comparison()
+    plot_time_log_scale()
+    plot_ops_log_scale()
+    plot_ratio_vs_binet()
+    plot_individual_trials_ops()
+    plot_individual_trials_time()
+
+    print(f"\nWszystkie wykresy zapisane w: {os.path.abspath(PLOTS_DIR)}")
