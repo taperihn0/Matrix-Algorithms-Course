@@ -1,4 +1,5 @@
 #include "matrix.hpp"
+#include "types.hpp"
 #include <array>
 #include <cassert>
 #include <memory>

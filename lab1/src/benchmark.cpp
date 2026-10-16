@@ -1,8 +1,63 @@
 #include "benchmark.hpp"
+#include "matrix.hpp"
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <chrono>
+#include <string>
+
+void Benchmark::bench(const std::string &s, const std::string &stats,
+                      const std::string &op) {
+  std::ofstream fstandard(stats + "standart.out");
+  std::ofstream fbinet(stats + "binet.out");
+  std::ofstream fladerman(stats + "laderman.out");
+  std::ofstream fstrassen(stats + "strassen.out");
+
+  std::ofstream fstandard_op(op + "standart.out");
+  std::ofstream fbinet_op(op + "binet.out");
+  std::ofstream fladerman_op(op + "laderman.out");
+  std::ofstream fstrassen_op(op + "strassen.out");
+
+  for (int i = 2; i < 500; ++i) {
+    Matrix2x<mfloat> a(i, i);
+    Matrix2x<mfloat> b(i, i);
+
+    std::string a_path = "./matrixes/matrix_" + std::to_string(i) + "/a.txt";
+    std::string b_path = "./matrixes/matrix_" + std::to_string(i) + "/b.txt";
+    std::string c_path = "./matrixes/matrix_" + std::to_string(i) + "/c.txt";
+
+    this->load_matrix(a_path, b_path, a, b);
+
+    double standard = this->perform_benchmark(
+        [&]() -> Matrix2x<mfloat> {
+          return matrix_mul(a, b, enumMatMult::Default);
+        },
+        fstandard_op);
+
+    double binet = this->perform_benchmark(
+        [&]() -> Matrix2x<mfloat> {
+          return matrix_mul(a, b, enumMatMult::Binet);
+        },
+        fbinet_op);
+
+    double strassen = this->perform_benchmark(
+        [&]() -> Matrix2x<mfloat> {
+          return matrix_mul(a, b, enumMatMult::Strassen);
+        },
+        fstrassen_op);
+
+    double laderman = this->perform_benchmark(
+        [&]() -> Matrix2x<mfloat> {
+          return matrix_mul(a, b, enumMatMult::Laderman);
+        },
+        fladerman_op);
+
+    fstandard << i << "," << standard << "\n";
+    fbinet << i << "," << binet << "\n";
+    fstrassen << i << "," << strassen << "\n";
+    fladerman << i << "," << laderman << "\n";
+  }
+}
 
 void Benchmark::generate_test_matrix(const std::string &s, int start, int end,
                                      int step) {

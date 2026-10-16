@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 template <typename T> class Matrix2xView;
 
