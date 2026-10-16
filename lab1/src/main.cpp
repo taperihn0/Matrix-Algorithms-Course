@@ -1,7 +1,6 @@
 #include "benchmark.hpp"
 #include "matrix.hpp"
-#include <iostream>
-#include <string>
+#include "tests.hpp"
 
 int main() {
   // Jawne użycie typu mfloat dla każdego elementu
@@ -19,7 +18,7 @@ int main() {
 
   std::cout << "HEJKA\n" << result << std::endl;
   */
-  
+
   Benchmark bench;
 
   /*
@@ -31,24 +30,20 @@ int main() {
     Matrix2x<mfloat> a(i, i);
     Matrix2x<mfloat> b(i, i);
 
-    std::string a_path =
-        "./matrixes/matrix_" + std::to_string(i) + "/a.txt";
-    std::string b_path =
-        "./matrixes/matrix_" + std::to_string(i) + "/b.txt";
-    std::string c_path =
-        "./matrixes/matrix_" + std::to_string(i) + "/c.txt";
+    std::string a_path = "./matrixes/matrix_" + std::to_string(i) + "/a.txt";
+    std::string b_path = "./matrixes/matrix_" + std::to_string(i) + "/b.txt";
+    std::string c_path = "./matrixes/matrix_" + std::to_string(i) + "/c.txt";
 
     bench.load_matrix(a_path, b_path, a, b);
 
-    //Matrix2x<mfloat> c = matrix_mul(a, b, enumMatMult::Default);
+    // Matrix2x<mfloat> c = matrix_mul(a, b, enumMatMult::Default);
 
-    double elapsed = bench.perform_benchmark([&]() {
-        return matrix_mul(a, b, enumMatMult::Default);
-    });
+    double elapsed = bench.perform_benchmark(
+        [&]() { return matrix_mul(a, b, enumMatMult::Default); });
 
     std::cout << elapsed << std::endl;
 
-    //bench.save_matrix(c_path, c, i);
+    // bench.save_matrix(c_path, c, i);
 
     if (i % 50 == 0)
       std::cout << i << "\n";
