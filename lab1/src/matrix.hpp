@@ -1,12 +1,24 @@
 #pragma once
 
-#include "types.hpp"
+#include "../src/types.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <new>
 #include <stdexcept>
-#include <vector>
+#include <utility>
+
+inline auto CachelineSize = 64uz;
+
+enum class enumMatMult { 
+  Default, 
+  Binet, 
+  Strassen, 
+  Laderman 
+};
+
 
 template <typename T> class Matrix2xView;
 
@@ -46,6 +58,13 @@ public:
 
   Matrix2x(std::initializer_list<std::initializer_list<T>> init);
 
+  Matrix2x(const Matrix2x &other);
+  Matrix2x(Matrix2x &&other) noexcept;
+  Matrix2x &operator=(const Matrix2x &other);
+  Matrix2x &operator=(Matrix2x &&other) noexcept;
+
+  ~Matrix2x();
+
   bool operator==(const Matrix2x &rhs) const;
   bool operator!=(const Matrix2x &rhs) const;
 
@@ -58,12 +77,17 @@ public:
   T *data();
   const T *data() const;
 
+  static Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
+                                enumMatMult alg = enumMatMult::Binet);
+
+  Matrix2x<T> &inverse(Matrix2x<T> &acc, enumMatMult alg = enumMatMult::Binet);
+
 private:
   void check_index(size_type i, size_type j) const;
 
-  size_type m_rows;
-  size_type m_cols;
-  std::vector<T> m_data;
+  size_type m_rows = 0;
+  size_type m_cols = 0;
+  std::unique_ptr<T[]> m_data = nullptr;
 };
 
 template <typename T> class Matrix2xView {
@@ -122,15 +146,21 @@ private:
   size_type m_cols = 0;
 };
 
-enum class enumMatMult { Default, Binet, Strassen, Laderman };
-
-template <typename T>
-Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
-                       enumMatMult alg);
-
 template <typename T>
 inline Matrix2x<T>::Matrix2x(size_type n, size_type m)
-    : m_rows(n), m_cols(m), m_data(n * m) {}
+    : m_rows(n), m_cols(m) {
+  assert(n == 0 || m == 0 || n * m > 0);
+  const auto nelem = n * m;
+
+  if (nelem == 0) {
+    return;
+  }
+
+  auto *raw = static_cast<T *>(::operator new(nelem * sizeof(T),
+                                               std::align_val_t(CachelineSize)));
+  std::uninitialized_value_construct_n(raw, nelem);
+  m_data.reset(raw);
+}
 
 template <typename T>
 inline Matrix2x<T>::Matrix2x(
@@ -142,21 +172,80 @@ inline Matrix2x<T>::Matrix2x(
   }
 
   m_cols = init.begin()->size();
-  m_data.reserve(m_rows * m_cols);
+  const auto nelem = m_rows * m_cols;
+  auto *raw = static_cast<T *>(::operator new(nelem * sizeof(T),
+                                               std::align_val_t(CachelineSize)));
+  std::uninitialized_value_construct_n(raw, nelem);
 
+  size_type i = 0;
   for (const auto &row : init) {
     if (row.size() != m_cols) {
+      std::destroy_n(raw, i);
+      ::operator delete(raw, std::align_val_t(CachelineSize));
       throw std::invalid_argument("Matrix2x: invalid initializer list");
     }
-
     for (const auto &v : row) {
-      m_data.push_back(v);
+      raw[i] = v;
+      ++i;
     }
+  }
+
+  std::destroy_n(raw, i);
+  m_data.reset(raw);
+}
+
+template <typename T>
+inline Matrix2x<T>::Matrix2x(const Matrix2x &other)
+    : m_rows(other.m_rows), m_cols(other.m_cols), m_data() {
+  if (m_rows == 0 || m_cols == 0) {
+    return;
+  }
+  const auto nelem = m_rows * m_cols;
+  auto *raw = static_cast<T *>(::operator new(nelem * sizeof(T),
+                                               std::align_val_t(CachelineSize)));
+  std::uninitialized_copy_n(other.m_data.get(), nelem, raw);
+  m_data.reset(raw);
+}
+
+template <typename T>
+inline Matrix2x<T>::Matrix2x(Matrix2x &&other) noexcept
+    : m_rows(std::exchange(other.m_rows, 0)),
+      m_cols(std::exchange(other.m_cols, 0)),
+      m_data(std::exchange(other.m_data, nullptr)) {}
+
+template <typename T>
+inline Matrix2x<T> &Matrix2x<T>::operator=(const Matrix2x &other) {
+  if (this == &other) {
+    return *this;
+  }
+  Matrix2x tmp(other);
+  std::swap(m_rows, tmp.m_rows);
+  std::swap(m_cols, tmp.m_cols);
+  std::swap(m_data, tmp.m_data);
+  return *this;
+}
+
+template <typename T>
+inline Matrix2x<T> &Matrix2x<T>::operator=(Matrix2x &&other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+  m_rows = std::exchange(other.m_rows, 0);
+  m_cols = std::exchange(other.m_cols, 0);
+  m_data = std::exchange(other.m_data, nullptr);
+  return *this;
+}
+
+template <typename T>
+inline Matrix2x<T>::~Matrix2x() {
+  if (m_data) {
+    std::destroy_n(m_data.get(), m_rows * m_cols);
+    m_data.reset(nullptr);
   }
 }
 
 template <typename T>
-Matrix2xView<T>
+inline Matrix2xView<T>
 Matrix2x<T>::submatrix_view(size_type start_row, size_type start_col,
                             size_type view_rows, size_type view_cols) {
   return Matrix2xView<T>(data(), cols(), start_row, start_col, view_rows,
@@ -206,10 +295,10 @@ inline const T &Matrix2x<T>::operator()(size_type i, size_type j) const {
   return at(i, j);
 }
 
-template <typename T> T *Matrix2x<T>::data() { return m_data.data(); }
+template <typename T> T *Matrix2x<T>::data() { return m_data.get(); }
 
 template <typename T> const T *Matrix2x<T>::data() const {
-  return m_data.data();
+  return m_data.get();
 }
 
 template <typename T>
@@ -220,7 +309,7 @@ inline Matrix2x<T> Matrix2x<T>::operator+(const Matrix2x &rhs) const {
 
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] + rhs.m_data[i];
   }
 
@@ -235,7 +324,7 @@ inline Matrix2x<T> Matrix2x<T>::operator-(const Matrix2x &rhs) const {
 
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] - rhs.m_data[i];
   }
 
@@ -250,7 +339,7 @@ inline Matrix2x<T> Matrix2x<T>::operator*(const Matrix2x &rhs) const {
 
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] * rhs.m_data[i];
   }
 
@@ -265,7 +354,7 @@ inline Matrix2x<T> Matrix2x<T>::operator/(const Matrix2x &rhs) const {
 
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] / rhs.m_data[i];
   }
 
@@ -275,7 +364,7 @@ inline Matrix2x<T> Matrix2x<T>::operator/(const Matrix2x &rhs) const {
 template <typename T> inline Matrix2x<T> Matrix2x<T>::operator+(T rhs) const {
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] + rhs;
   }
 
@@ -285,7 +374,7 @@ template <typename T> inline Matrix2x<T> Matrix2x<T>::operator+(T rhs) const {
 template <typename T> inline Matrix2x<T> Matrix2x<T>::operator-(T rhs) const {
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] - rhs;
   }
 
@@ -295,7 +384,7 @@ template <typename T> inline Matrix2x<T> Matrix2x<T>::operator-(T rhs) const {
 template <typename T> inline Matrix2x<T> Matrix2x<T>::operator*(T rhs) const {
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] * rhs;
   }
 
@@ -305,7 +394,7 @@ template <typename T> inline Matrix2x<T> Matrix2x<T>::operator*(T rhs) const {
 template <typename T> inline Matrix2x<T> Matrix2x<T>::operator/(T rhs) const {
   Matrix2x res(rows(), cols());
 
-  for (size_type i = 0; i < m_data.size(); ++i) {
+  for (size_type i = 0; i < m_rows * m_cols; ++i) {
     res.m_data[i] = m_data[i] / rhs;
   }
 
@@ -358,7 +447,9 @@ template <typename T> inline Matrix2x<T> &Matrix2x<T>::operator/=(T rhs) {
 
 template <typename T>
 inline bool Matrix2x<T>::operator==(const Matrix2x &rhs) const {
-  return rows() == rhs.rows() && cols() == rhs.cols() && m_data == rhs.m_data;
+  return rows() == rhs.rows() && cols() == rhs.cols() &&
+         std::equal(m_data.get(), m_data.get() + m_rows * m_cols,
+                    rhs.m_data.get());
 }
 
 template <typename T>
@@ -513,7 +604,8 @@ inline Matrix2xView<T> &Matrix2xView<T>::matrix_sub_accum_into(
 }
 
 template <typename T>
-inline Matrix2xView<T> &Matrix2xView<T>::matrix_addsub_accum_into(
+inline Matrix2xView<T> &
+Matrix2xView<T>::matrix_addsub_accum_into(
     std::initializer_list<const Matrix2xView<T> *> adds,
     std::initializer_list<const Matrix2xView<T> *> subs) {
   looped_elem_assign(*this, [&](size_type i, size_type j) {
