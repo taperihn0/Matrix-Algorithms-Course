@@ -24,5 +24,19 @@ int main() {
     }
   }
 
+  auto M_view = M.submatrix_view(0, 0, 10, 10);
+  auto [L, U] = LU(M_view, enumMatMult::Binet);
+
+  std::cout << L << std::endl;
+  std::cout << U << std::endl;
+
+  auto lu_mul = matrix_mul(L, U, enumMatMult::Binet) - M;
+
+  for (int i = 0; i < 10; ++i) {
+    for (int j = 0; j < 10; ++j) {
+      assert(std::abs(lu_mul(i, j)) < 1e-5);
+    }
+  }
+
   return 0;
 }
