@@ -1,49 +1,47 @@
 #include "matrix.hpp"
 #include <array>
 #include <cassert>
+#include <cstddef>
 #include <memory>
-#include <vector>
 #include <stdexcept>
+#include <vector>
 
 namespace utils {
 
-template <typename T>
-class MulIntermediateBuffer {
+template <typename T> class MulIntermediateBuffer {
 public:
   MulIntermediateBuffer() = delete;
-  explicit MulIntermediateBuffer(std::size_t buf_size) 
-      : m_size(buf_size)
-      , m_data(::new T[buf_size]) 
-  {}
+  explicit MulIntermediateBuffer(std::size_t buf_size)
+      : m_size(buf_size), m_data(::new T[buf_size]) {}
 
-  Matrix2xView<T> query_matrix_view(std::size_t view_rows, std::size_t view_cols) { 
-      const std::size_t req = view_rows * view_cols;
+  Matrix2xView<T> query_matrix_view(std::size_t view_rows,
+                                    std::size_t view_cols) {
+    const std::size_t req = view_rows * view_cols;
 
 #ifdef DEBUG
-      check_pointer_overflow(req);
+    check_pointer_overflow(req);
 #endif
 
-      const auto mv = Matrix2xView<T>(m_data.get() + m_pointer, view_cols, 0, 0, view_rows, view_cols);
-      
-      m_pointer += req;
-      return mv;
+    const auto mv = Matrix2xView<T>(m_data.get() + m_pointer, view_cols, 0, 0,
+                                    view_rows, view_cols);
+
+    m_pointer += req;
+    return mv;
   }
 
-  std::size_t get_mark_pointer() const { 
-    return m_pointer; 
-  }
+  std::size_t get_mark_pointer() const { return m_pointer; }
 
   void revert_to_mark(std::size_t mark) {
-      assert(mark <= m_pointer);
-      m_pointer = mark;
+    assert(mark <= m_pointer);
+    m_pointer = mark;
   }
 
 private:
 #ifdef DEBUG
-void check_pointer_overflow(std::size_t req) {
-      if (m_pointer + req > m_size) {
-          throw std::runtime_error("MulIntermediateBuffer: Pointer overflow");
-      }
+  void check_pointer_overflow(std::size_t req) {
+    if (m_pointer + req > m_size) {
+      throw std::runtime_error("MulIntermediateBuffer: Pointer overflow");
+    }
   }
 #endif
 
@@ -56,44 +54,41 @@ void check_pointer_overflow(std::size_t req) {
 
 // @TODO: SIMD version?
 template <typename T>
-void default_matrix_mul_accum(const Matrix2xView<T>& a, 
-                              const Matrix2xView<T>& b, 
-                              Matrix2xView<T>& acc) 
-{
+void default_matrix_mul_accum(const Matrix2xView<T> &a,
+                              const Matrix2xView<T> &b, Matrix2xView<T> &acc) {
   assert(a.cols() == b.rows());
   assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
   for (std::size_t i = 0; i < a.rows(); ++i) {
-      for (std::size_t j = 0; j < b.cols(); ++j) {
-          T sum = static_cast<T>(0); 
-          
-          for (std::size_t k = 0; k < a.cols(); ++k) {
-              sum += a(i, k) * b(k, j);
-          }
+    for (std::size_t j = 0; j < b.cols(); ++j) {
+      T sum = static_cast<T>(0);
 
-          acc(i, j) += sum;
+      for (std::size_t k = 0; k < a.cols(); ++k) {
+        sum += a(i, k) * b(k, j);
       }
+
+      acc(i, j) += sum;
+    }
   }
 }
 
 namespace strassen {
 
 template <typename T>
-void strassen_matrix_mul_accum(const Matrix2xView<T>& a, 
-                               const Matrix2xView<T>& b, 
-                               Matrix2xView<T>& acc, 
-                               utils::MulIntermediateBuffer<T>& pbuf,
-                               utils::MulIntermediateBuffer<T>& uvbuf) {
+void strassen_matrix_mul_accum(const Matrix2xView<T> &a,
+                               const Matrix2xView<T> &b, Matrix2xView<T> &acc,
+                               utils::MulIntermediateBuffer<T> &pbuf,
+                               utils::MulIntermediateBuffer<T> &uvbuf) {
   assert(a.cols() == b.rows());
-  assert(a.rows() == a.cols() && b.rows() == b.cols()); 
+  assert(a.rows() == a.cols() && b.rows() == b.cols());
   assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
   const auto n = a.rows();
   static constexpr auto StrassenBaseBlockSize = 4uz;
 
   if (n <= StrassenBaseBlockSize) {
-      default_matrix_mul_accum(a, b, acc);
-      return;
+    default_matrix_mul_accum(a, b, acc);
+    return;
   }
 
   const bool even = !(n & 1);
@@ -120,9 +115,9 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
   const auto p_mark = pbuf.get_mark_pointer();
   const auto uv_mark = uvbuf.get_mark_pointer();
 
-  for (auto& pi : p) {
-      pi = pbuf.query_matrix_view(n_div, n_div);
-      pi.fill(static_cast<T>(0));
+  for (auto &pi : p) {
+    pi = pbuf.query_matrix_view(n_div, n_div);
+    pi.fill(static_cast<T>(0));
   }
 
   // Create intermediate buffers for operation results
@@ -167,9 +162,9 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
   c22.matrix_addsub_accum_into({&p[0], &p[2], &p[5]}, {&p[1]});
 
   if (even) { // means we're done, because entire matrix is already multiplied
-      pbuf.revert_to_mark(p_mark);
-      uvbuf.revert_to_mark(uv_mark);
-      return;
+    pbuf.revert_to_mark(p_mark);
+    uvbuf.revert_to_mark(uv_mark);
+    return;
   }
 
   // Multiply cropped row and column
@@ -177,29 +172,29 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
   const auto last = n - 1;
 
   for (std::size_t i = 0; i < last; ++i) {
-      for (std::size_t j = 0; j < last; ++j) {
-          acc(i, j) += a(i, last) * b(last, j);
-      }
+    for (std::size_t j = 0; j < last; ++j) {
+      acc(i, j) += a(i, last) * b(last, j);
+    }
   }
 
   for (std::size_t i = 0; i < n; ++i) {
-      T sum = static_cast<T>(0);
-      
-      for (std::size_t k = 0; k < n; ++k) {
-          sum += a(i, k) * b(k, last);
-      }
+    T sum = static_cast<T>(0);
 
-      acc(i, last) += sum;
+    for (std::size_t k = 0; k < n; ++k) {
+      sum += a(i, k) * b(k, last);
+    }
+
+    acc(i, last) += sum;
   }
 
   for (std::size_t j = 0; j < last; ++j) {
-      T sum = static_cast<T>(0);
+    T sum = static_cast<T>(0);
 
-      for (std::size_t k = 0; k < n; ++k) {
-          sum += a(last, k) * b(k, j);
-      }
+    for (std::size_t k = 0; k < n; ++k) {
+      sum += a(last, k) * b(k, j);
+    }
 
-      acc(last, j) += sum;
+    acc(last, j) += sum;
   }
 
   pbuf.revert_to_mark(p_mark);
@@ -211,9 +206,8 @@ void strassen_matrix_mul_accum(const Matrix2xView<T>& a,
 namespace binet {
 
 template <typename T>
-void binet_matrix_mul_accum(const Matrix2xView<T>& a, 
-                            const Matrix2xView<T>& b, 
-                            Matrix2xView<T>& acc) {
+void binet_matrix_mul_accum(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
+                            Matrix2xView<T> &acc) {
   assert(a.cols() == b.rows());
   // Note: sub-blocks may be rectangular when n is odd, so only the
   // dimension-compatibility asserts apply here.
@@ -224,8 +218,8 @@ void binet_matrix_mul_accum(const Matrix2xView<T>& a,
   const auto n = a.rows();
 
   if (n <= BinetBaseBlockSize) {
-      default_matrix_mul_accum(a, b, acc);
-      return;
+    default_matrix_mul_accum(a, b, acc);
+    return;
   }
 
   const auto n_rows = a.rows();
@@ -258,7 +252,7 @@ void binet_matrix_mul_accum(const Matrix2xView<T>& a,
   const auto b12 = Matrix2xView<T>(b, 0, cols_l, inner_l, cols_r);
   const auto b21 = Matrix2xView<T>(b, inner_l, 0, inner_r, cols_l);
   const auto b22 = Matrix2xView<T>(b, inner_l, cols_l, inner_r, cols_r);
-  
+
   // Final stage: perform operations on submatrices
 
   // C11 = A11 * B11 + A12 * B21
@@ -283,97 +277,96 @@ void binet_matrix_mul_accum(const Matrix2xView<T>& a,
 namespace laderman {
 
 template <typename T>
-void laderman_matrix_mul_accum(const Matrix2xView<T>& a, 
-                               const Matrix2xView<T>& b, 
-                               Matrix2xView<T>& acc, 
-                               utils::MulIntermediateBuffer<T>& mbuf,
-                               utils::MulIntermediateBuffer<T>& uvbuf) {
-    assert(a.cols() == b.rows());
-    assert(a.rows() == a.cols() && b.rows() == b.cols()); 
-    assert(a.rows() == acc.rows() && b.cols() == acc.cols());
+void laderman_matrix_mul_accum(const Matrix2xView<T> &a,
+                               const Matrix2xView<T> &b, Matrix2xView<T> &acc,
+                               utils::MulIntermediateBuffer<T> &mbuf,
+                               utils::MulIntermediateBuffer<T> &uvbuf) {
+  assert(a.cols() == b.rows());
+  assert(a.rows() == a.cols() && b.rows() == b.cols());
+  assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
-    static constexpr auto LadermanBaseBlockSize = 4uz;
+  static constexpr auto LadermanBaseBlockSize = 4uz;
 
-    const auto n = a.rows();
+  const auto n = a.rows();
 
-    if (n <= LadermanBaseBlockSize) {
-        default_matrix_mul_accum(a, b, acc);
-        return;
-    }
+  if (n <= LadermanBaseBlockSize) {
+    default_matrix_mul_accum(a, b, acc);
+    return;
+  }
 
-    const bool n_is3div = !(n % 3);
-    const auto n_div = n / 3;
+  const bool n_is3div = !(n % 3);
+  const auto n_div = n / 3;
 
-    auto c11 = Matrix2xView<T>(acc, 0, 0, n_div, n_div);
-    auto c12 = Matrix2xView<T>(acc, 0, n_div, n_div, n_div);
-    auto c13 = Matrix2xView<T>(acc, 0, 2 * n_div, n_div, n_div);
-    auto c21 = Matrix2xView<T>(acc, n_div, 0, n_div, n_div);
-    auto c22 = Matrix2xView<T>(acc, n_div, n_div, n_div, n_div);
-    auto c23 = Matrix2xView<T>(acc, n_div, 2 * n_div, n_div, n_div);
-    auto c31 = Matrix2xView<T>(acc, 2 * n_div, 0, n_div, n_div);
-    auto c32 = Matrix2xView<T>(acc, 2 * n_div, n_div, n_div, n_div);
-    auto c33 = Matrix2xView<T>(acc, 2 * n_div, 2 * n_div, n_div, n_div);
+  auto c11 = Matrix2xView<T>(acc, 0, 0, n_div, n_div);
+  auto c12 = Matrix2xView<T>(acc, 0, n_div, n_div, n_div);
+  auto c13 = Matrix2xView<T>(acc, 0, 2 * n_div, n_div, n_div);
+  auto c21 = Matrix2xView<T>(acc, n_div, 0, n_div, n_div);
+  auto c22 = Matrix2xView<T>(acc, n_div, n_div, n_div, n_div);
+  auto c23 = Matrix2xView<T>(acc, n_div, 2 * n_div, n_div, n_div);
+  auto c31 = Matrix2xView<T>(acc, 2 * n_div, 0, n_div, n_div);
+  auto c32 = Matrix2xView<T>(acc, 2 * n_div, n_div, n_div, n_div);
+  auto c33 = Matrix2xView<T>(acc, 2 * n_div, 2 * n_div, n_div, n_div);
 
-    const auto a11 = Matrix2xView<T>(a, 0, 0, n_div, n_div);
-    const auto a12 = Matrix2xView<T>(a, 0, n_div, n_div, n_div);
-    const auto a13 = Matrix2xView<T>(a, 0, 2 * n_div, n_div, n_div);
-    const auto a21 = Matrix2xView<T>(a, n_div, 0, n_div, n_div);
-    const auto a22 = Matrix2xView<T>(a, n_div, n_div, n_div, n_div);
-    const auto a23 = Matrix2xView<T>(a, n_div, 2 * n_div, n_div, n_div);
-    const auto a31 = Matrix2xView<T>(a, 2 * n_div, 0, n_div, n_div);
-    const auto a32 = Matrix2xView<T>(a, 2 * n_div, n_div, n_div, n_div);
-    const auto a33 = Matrix2xView<T>(a, 2 * n_div, 2 * n_div, n_div, n_div);
+  const auto a11 = Matrix2xView<T>(a, 0, 0, n_div, n_div);
+  const auto a12 = Matrix2xView<T>(a, 0, n_div, n_div, n_div);
+  const auto a13 = Matrix2xView<T>(a, 0, 2 * n_div, n_div, n_div);
+  const auto a21 = Matrix2xView<T>(a, n_div, 0, n_div, n_div);
+  const auto a22 = Matrix2xView<T>(a, n_div, n_div, n_div, n_div);
+  const auto a23 = Matrix2xView<T>(a, n_div, 2 * n_div, n_div, n_div);
+  const auto a31 = Matrix2xView<T>(a, 2 * n_div, 0, n_div, n_div);
+  const auto a32 = Matrix2xView<T>(a, 2 * n_div, n_div, n_div, n_div);
+  const auto a33 = Matrix2xView<T>(a, 2 * n_div, 2 * n_div, n_div, n_div);
 
-    const auto b11 = Matrix2xView<T>(b, 0, 0, n_div, n_div);
-    const auto b12 = Matrix2xView<T>(b, 0, n_div, n_div, n_div);
-    const auto b13 = Matrix2xView<T>(b, 0, 2 * n_div, n_div, n_div);
-    const auto b21 = Matrix2xView<T>(b, n_div, 0, n_div, n_div);
-    const auto b22 = Matrix2xView<T>(b, n_div, n_div, n_div, n_div);
-    const auto b23 = Matrix2xView<T>(b, n_div, 2 * n_div, n_div, n_div);
-    const auto b31 = Matrix2xView<T>(b, 2 * n_div, 0, n_div, n_div);
-    const auto b32 = Matrix2xView<T>(b, 2 * n_div, n_div, n_div, n_div);
-    const auto b33 = Matrix2xView<T>(b, 2 * n_div, 2 * n_div, n_div, n_div);
+  const auto b11 = Matrix2xView<T>(b, 0, 0, n_div, n_div);
+  const auto b12 = Matrix2xView<T>(b, 0, n_div, n_div, n_div);
+  const auto b13 = Matrix2xView<T>(b, 0, 2 * n_div, n_div, n_div);
+  const auto b21 = Matrix2xView<T>(b, n_div, 0, n_div, n_div);
+  const auto b22 = Matrix2xView<T>(b, n_div, n_div, n_div, n_div);
+  const auto b23 = Matrix2xView<T>(b, n_div, 2 * n_div, n_div, n_div);
+  const auto b31 = Matrix2xView<T>(b, 2 * n_div, 0, n_div, n_div);
+  const auto b32 = Matrix2xView<T>(b, 2 * n_div, n_div, n_div, n_div);
+  const auto b33 = Matrix2xView<T>(b, 2 * n_div, 2 * n_div, n_div, n_div);
 
-    std::array<Matrix2xView<T>, 23> m;
+  std::array<Matrix2xView<T>, 23> m;
 
-    // Mark current stack pointer, then return to that mark
-    const auto m_mark = mbuf.get_mark_pointer();
-    const auto uv_mark = uvbuf.get_mark_pointer();
+  // Mark current stack pointer, then return to that mark
+  const auto m_mark = mbuf.get_mark_pointer();
+  const auto uv_mark = uvbuf.get_mark_pointer();
 
-    for (auto& mi : m) {
-      mi = mbuf.query_matrix_view(n_div, n_div);
-      mi.fill(static_cast<T>(0));
-    }
+  for (auto &mi : m) {
+    mi = mbuf.query_matrix_view(n_div, n_div);
+    mi.fill(static_cast<T>(0));
+  }
 
-    // Create intermediate buffers for operation results
-    auto u = uvbuf.query_matrix_view(n_div, n_div);
-    auto v = uvbuf.query_matrix_view(n_div, n_div);
+  // Create intermediate buffers for operation results
+  auto u = uvbuf.query_matrix_view(n_div, n_div);
+  auto v = uvbuf.query_matrix_view(n_div, n_div);
 
-    {
-    // m1 = (a11 + a12 + a13 - a21 - a22 - a32 - a33) * b22 
+  {
+    // m1 = (a11 + a12 + a13 - a21 - a22 - a32 - a33) * b22
     u.matrix_addsub_accum_into({&a11, &a12, &a13}, {&a21, &a22, &a32, &a33});
     laderman_matrix_mul_accum(u, b22, m[0], mbuf, uvbuf);
 
-    // m2 = (a11 - a21) * (-b12 + b22) 
+    // m2 = (a11 - a21) * (-b12 + b22)
     u.matrix_addsub_accum_into({&a11}, {&a21});
     v.matrix_addsub_accum_into({&b22}, {&b12});
     laderman_matrix_mul_accum(u, v, m[1], mbuf, uvbuf);
 
-    // m3 = a22 * (-b11 + b12 + b21 - b22 - b23 - b31 + b33) 
+    // m3 = a22 * (-b11 + b12 + b21 - b22 - b23 - b31 + b33)
     v.matrix_addsub_accum_into({&b12, &b21, &b33}, {&b11, &b22, &b23, &b31});
     laderman_matrix_mul_accum(a22, v, m[2], mbuf, uvbuf);
 
-    // m4 = (-a11 + a21 + a22) * (b11 - b12 + b22) 
+    // m4 = (-a11 + a21 + a22) * (b11 - b12 + b22)
     u.matrix_addsub_accum_into({&a21, &a22}, {&a11});
     v.matrix_addsub_accum_into({&b11, &b22}, {&b12});
     laderman_matrix_mul_accum(u, v, m[3], mbuf, uvbuf);
 
-    // m5 = (a21 + a22) * (-b11 + b12) 
+    // m5 = (a21 + a22) * (-b11 + b12)
     u.matrix_add2_accum_into(a21, a22);
     v.matrix_addsub_accum_into({&b12}, {&b11});
     laderman_matrix_mul_accum(u, v, m[4], mbuf, uvbuf);
 
-    // m6 = a11 * b11 
+    // m6 = a11 * b11
     laderman_matrix_mul_accum(a11, b11, m[5], mbuf, uvbuf);
 
     // m7 = (-a11 + a31 + a32) * (b11 - b13 + b23)
@@ -381,70 +374,70 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
     v.matrix_addsub_accum_into({&b11, &b23}, {&b13});
     laderman_matrix_mul_accum(u, v, m[6], mbuf, uvbuf);
 
-    // m8 = (-a11 + a31) * (b13 - b23) 
+    // m8 = (-a11 + a31) * (b13 - b23)
     u.matrix_addsub_accum_into({&a31}, {&a11});
     v.matrix_addsub_accum_into({&b13}, {&b23});
     laderman_matrix_mul_accum(u, v, m[7], mbuf, uvbuf);
 
-    // m9 = (a31 + a32) * (-b11 + b13) 
+    // m9 = (a31 + a32) * (-b11 + b13)
     u.matrix_add2_accum_into(a31, a32);
     v.matrix_addsub_accum_into({&b13}, {&b11});
     laderman_matrix_mul_accum(u, v, m[8], mbuf, uvbuf);
 
-    // m10 = (a11 + a12 + a13 - a22 - a23 - a31 - a32) * b23 
+    // m10 = (a11 + a12 + a13 - a22 - a23 - a31 - a32) * b23
     u.matrix_addsub_accum_into({&a11, &a12, &a13}, {&a22, &a23, &a31, &a32});
     laderman_matrix_mul_accum(u, b23, m[9], mbuf, uvbuf);
 
-    // m11 = a32 * (-b11 + b13 + b21 - b22 - b23 - b31 + b32) 
+    // m11 = a32 * (-b11 + b13 + b21 - b22 - b23 - b31 + b32)
     v.matrix_addsub_accum_into({&b13, &b21, &b32}, {&b11, &b22, &b23, &b31});
     laderman_matrix_mul_accum(a32, v, m[10], mbuf, uvbuf);
 
-    // m12 = (-a13 + a32 + a33) * (b22 + b31 - b32) 
+    // m12 = (-a13 + a32 + a33) * (b22 + b31 - b32)
     u.matrix_addsub_accum_into({&a32, &a33}, {&a13});
     v.matrix_addsub_accum_into({&b22, &b31}, {&b32});
     laderman_matrix_mul_accum(u, v, m[11], mbuf, uvbuf);
 
-    // m13 = (a13 - a33) * (b22 - b32) 
+    // m13 = (a13 - a33) * (b22 - b32)
     u.matrix_addsub_accum_into({&a13}, {&a33});
     v.matrix_addsub_accum_into({&b22}, {&b32});
     laderman_matrix_mul_accum(u, v, m[12], mbuf, uvbuf);
 
-    // m14 = a13 * b31 
+    // m14 = a13 * b31
     laderman_matrix_mul_accum(a13, b31, m[13], mbuf, uvbuf);
 
-    // m15 = (a32 + a33) * (-b31 + b32) 
+    // m15 = (a32 + a33) * (-b31 + b32)
     u.matrix_add2_accum_into(a32, a33);
     v.matrix_addsub_accum_into({&b32}, {&b31});
     laderman_matrix_mul_accum(u, v, m[14], mbuf, uvbuf);
 
-    // m16 = (-a13 + a22 + a23) * (b23 + b31 - b33) 
+    // m16 = (-a13 + a22 + a23) * (b23 + b31 - b33)
     u.matrix_addsub_accum_into({&a22, &a23}, {&a13});
     v.matrix_addsub_accum_into({&b23, &b31}, {&b33});
     laderman_matrix_mul_accum(u, v, m[15], mbuf, uvbuf);
 
-    // m17 = (a13 - a23) * (b23 - b33) 
+    // m17 = (a13 - a23) * (b23 - b33)
     u.matrix_addsub_accum_into({&a13}, {&a23});
     v.matrix_addsub_accum_into({&b23}, {&b33});
     laderman_matrix_mul_accum(u, v, m[16], mbuf, uvbuf);
 
-    // m18 = (a22 + a23) * (-b31 + b33) 
+    // m18 = (a22 + a23) * (-b31 + b33)
     u.matrix_add2_accum_into(a22, a23);
     v.matrix_addsub_accum_into({&b33}, {&b31});
     laderman_matrix_mul_accum(u, v, m[17], mbuf, uvbuf);
 
-    // m19 = a12 * b21 
+    // m19 = a12 * b21
     laderman_matrix_mul_accum(a12, b21, m[18], mbuf, uvbuf);
 
-    // m20 = a23 * b32 
+    // m20 = a23 * b32
     laderman_matrix_mul_accum(a23, b32, m[19], mbuf, uvbuf);
 
-    // m21 = a21 * b13 
+    // m21 = a21 * b13
     laderman_matrix_mul_accum(a21, b13, m[20], mbuf, uvbuf);
 
-    // m22 = a31 * b12 
+    // m22 = a31 * b12
     laderman_matrix_mul_accum(a31, b12, m[21], mbuf, uvbuf);
 
-    // m23 = a33 * b33 
+    // m23 = a33 * b33
     laderman_matrix_mul_accum(a33, b33, m[22], mbuf, uvbuf);
   }
 
@@ -452,17 +445,21 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
   // C11 = M6 + M14 + M19
   c11.matrix_add_accum_into({&m[5], &m[13], &m[18]});
   // C12 = M1 + M4 + M5 + M6 + M12 + M14 + M15
-  c12.matrix_add_accum_into({&m[0], &m[3], &m[4], &m[5], &m[11], &m[13], &m[14]});
+  c12.matrix_add_accum_into(
+      {&m[0], &m[3], &m[4], &m[5], &m[11], &m[13], &m[14]});
   // C13 = M6 + M7 + M9 + M11 + M14 + M16 + M18
-  c13.matrix_add_accum_into({&m[5], &m[6], &m[8], &m[9], &m[13], &m[15], &m[17]});
+  c13.matrix_add_accum_into(
+      {&m[5], &m[6], &m[8], &m[9], &m[13], &m[15], &m[17]});
   // C21 = M2 + M3 + M4 + M6 + M14 + M16 + M17
-  c21.matrix_add_accum_into({&m[1], &m[2], &m[3], &m[5], &m[13], &m[15], &m[16]});
+  c21.matrix_add_accum_into(
+      {&m[1], &m[2], &m[3], &m[5], &m[13], &m[15], &m[16]});
   // C22 = M2 + M4 + M5 + M6 + M20
   c22.matrix_add_accum_into({&m[1], &m[3], &m[4], &m[5], &m[19]});
   // C23 = M14 + M16 + M17 + M18 + M21
   c23.matrix_add_accum_into({&m[13], &m[15], &m[16], &m[17], &m[20]});
   // C31 = M6 + M7 + M8 + M11 + M12 + M13 + M14
-  c31.matrix_add_accum_into({&m[5], &m[6], &m[7], &m[10], &m[11], &m[12], &m[13]});
+  c31.matrix_add_accum_into(
+      {&m[5], &m[6], &m[7], &m[10], &m[11], &m[12], &m[13]});
   // C32 = M12 + M13 + M14 + M15 + M22
   c32.matrix_add_accum_into({&m[11], &m[12], &m[13], &m[14], &m[21]});
   // C33 = M6 + M7 + M8 + M9 + M23
@@ -477,49 +474,50 @@ void laderman_matrix_mul_accum(const Matrix2xView<T>& a,
   const auto bound = 3 * n_div;
 
   for (std::size_t i = 0; i < bound; ++i) {
-      for (std::size_t j = 0; j < bound; ++j) {
-          T sum = static_cast<T>(0);
+    for (std::size_t j = 0; j < bound; ++j) {
+      T sum = static_cast<T>(0);
 
-          for (std::size_t k = bound; k < n; ++k) {
-              sum += a(i, k) * b(k, j);
-          }
-
-          acc(i, j) += sum;
+      for (std::size_t k = bound; k < n; ++k) {
+        sum += a(i, k) * b(k, j);
       }
+
+      acc(i, j) += sum;
+    }
   }
 
   for (std::size_t i = 0; i < n; ++i) {
-      for (std::size_t j = bound; j < n; ++j) {
-          T sum = static_cast<T>(0);
+    for (std::size_t j = bound; j < n; ++j) {
+      T sum = static_cast<T>(0);
 
-          for (std::size_t k = 0; k < n; ++k) {
-              sum += a(i, k) * b(k, j);
-          }
-
-          acc(i, j) += sum;
+      for (std::size_t k = 0; k < n; ++k) {
+        sum += a(i, k) * b(k, j);
       }
+
+      acc(i, j) += sum;
+    }
   }
 
   for (std::size_t i = bound; i < n; ++i) {
-      for (std::size_t j = 0; j < bound; ++j) {
-          T sum = static_cast<T>(0);
+    for (std::size_t j = 0; j < bound; ++j) {
+      T sum = static_cast<T>(0);
 
-          for (std::size_t k = 0; k < n; ++k) {
-              sum += a(i, k) * b(k, j);
-          }
-
-          acc(i, j) += sum;
+      for (std::size_t k = 0; k < n; ++k) {
+        sum += a(i, k) * b(k, j);
       }
+
+      acc(i, j) += sum;
+    }
   }
 
   mbuf.revert_to_mark(m_mark);
   uvbuf.revert_to_mark(uv_mark);
 }
 
-}
+} // namespace laderman
 
 template <typename T>
-Matrix2x<T> matrix_mul(const Matrix2x<T>& a, const Matrix2x<T>& b, enumMatMult alg) {
+Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
+                       enumMatMult alg) {
   assert(a.cols() == b.rows());
 
   const auto a_rows = a.rows();
@@ -540,39 +538,190 @@ Matrix2x<T> matrix_mul(const Matrix2x<T>& a, const Matrix2x<T>& b, enumMatMult a
 
   switch (alg) {
   case enumMatMult::Default: {
-      default_matrix_mul_accum(a_view, b_view, dst_view);
-      break;
+    default_matrix_mul_accum(a_view, b_view, dst_view);
+    break;
   }
   case enumMatMult::Binet: {
-      binet::binet_matrix_mul_accum(a_view, b_view, dst_view);
-      break;
+    binet::binet_matrix_mul_accum(a_view, b_view, dst_view);
+    break;
   }
   case enumMatMult::Strassen: {
-      const auto pbuf_size = static_cast<std::size_t>((7. / 3.) * total_size) + SafetyBufMargin;
-      const auto uvbuf_size = static_cast<std::size_t>((2. / 3.) * total_size) + SafetyBufMargin;
+    const auto pbuf_size =
+        static_cast<std::size_t>((7. / 3.) * total_size) + SafetyBufMargin;
+    const auto uvbuf_size =
+        static_cast<std::size_t>((2. / 3.) * total_size) + SafetyBufMargin;
 
-      auto pbuf = utils::MulIntermediateBuffer<T>(pbuf_size);
-      auto uvbuf = utils::MulIntermediateBuffer<T>(uvbuf_size);
+    auto pbuf = utils::MulIntermediateBuffer<T>(pbuf_size);
+    auto uvbuf = utils::MulIntermediateBuffer<T>(uvbuf_size);
 
-      strassen::strassen_matrix_mul_accum(a_view, b_view, dst_view, pbuf, uvbuf);
-      break;
+    strassen::strassen_matrix_mul_accum(a_view, b_view, dst_view, pbuf, uvbuf);
+    break;
   }
   case enumMatMult::Laderman: {
-      const auto mbuf_size = static_cast<std::size_t>(2.875 * total_size) + SafetyBufMargin;
-      const auto uvbuf_size = static_cast<std::size_t>(0.25 * total_size) + SafetyBufMargin;
+    const auto mbuf_size =
+        static_cast<std::size_t>(2.875 * total_size) + SafetyBufMargin;
+    const auto uvbuf_size =
+        static_cast<std::size_t>(0.25 * total_size) + SafetyBufMargin;
 
-      auto mbuf = utils::MulIntermediateBuffer<T>(mbuf_size);
-      auto uvbuf = utils::MulIntermediateBuffer<T>(uvbuf_size);
-      
-      laderman::laderman_matrix_mul_accum(a_view, b_view, dst_view, mbuf, uvbuf);
-      break;
+    auto mbuf = utils::MulIntermediateBuffer<T>(mbuf_size);
+    auto uvbuf = utils::MulIntermediateBuffer<T>(uvbuf_size);
+
+    laderman::laderman_matrix_mul_accum(a_view, b_view, dst_view, mbuf, uvbuf);
+    break;
   }
-  default: 
-      assert(false);
+  default:
+    assert(false);
   }
 
   return dst;
 }
 
-template Matrix2x<mfloat> matrix_mul<mfloat>(const Matrix2x<mfloat>&, const Matrix2x<mfloat>&, enumMatMult alg);
-template Matrix2x<mdouble> matrix_mul<mdouble>(const Matrix2x<mdouble>&, const Matrix2x<mdouble>&, enumMatMult alg);
+template Matrix2x<mfloat> matrix_mul<mfloat>(const Matrix2x<mfloat> &,
+                                             const Matrix2x<mfloat> &,
+                                             enumMatMult alg);
+template Matrix2x<mdouble> matrix_mul<mdouble>(const Matrix2x<mdouble> &,
+                                               const Matrix2x<mdouble> &,
+                                               enumMatMult alg);
+
+template Matrix2x<mfloat> inverse<mfloat>(Matrix2xView<mfloat> &);
+template Matrix2x<mdouble> inverse<mdouble>(Matrix2xView<mdouble> &);
+
+template <typename T>
+void multiple_views(Matrix2xView<T> &a, Matrix2xView<T> &b,
+                    Matrix2xView<T> &acc) {
+  acc.fill(T{});
+  default_matrix_mul_accum(a, b, acc);
+};
+
+template <typename T>
+Matrix2x<T> mul_views(Matrix2xView<T> &a, Matrix2xView<T> &b) {
+  Matrix2x<T> result(a.rows(), b.cols());
+
+  auto result_view = result.submatrix_view(0, 0, a.rows(), b.cols());
+
+  multiple_views(a, b, result_view);
+
+  return result;
+}
+
+template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a) {
+  const std::size_t n = a.rows();
+
+  if (n != a.cols() || n == 0) {
+    throw std::invalid_argument("inverse: invalid matrix size");
+  }
+
+  if (n == 1) {
+    if (a(0, 0) == T{}) {
+      throw std::invalid_argument("inverse: singular matrix");
+    }
+
+    Matrix2x<T> result(1, 1);
+    result(0, 0) = T{1} / a(0, 0);
+    return result;
+  }
+
+  const std::size_t n1 = n / 2;
+  const std::size_t n2 = n - n1;
+
+  // Buffer block
+  auto buff1 = Matrix2x<T>(n, n);
+  auto buff2 = Matrix2x<T>(n, n);
+  //
+
+  auto a11 = a.submatrix_view(0, 0, n1, n1);
+  auto a12 = a.submatrix_view(0, n1, n1, n2);
+  auto a21 = a.submatrix_view(n1, 0, n2, n1);
+  auto a22 = a.submatrix_view(n1, n1, n2, n2);
+
+  // inv(a11)
+  auto inv_a11 = inverse(a11);
+  auto inv_a11_view = inv_a11.submatrix_view(0, 0, n1, n1);
+
+  // S22 = A22 - A21 * inv(A11) * A12.
+  auto buff1_view = buff1.submatrix_view(0, 0, n2, n1);
+  multiple_views(a21, inv_a11_view, buff1_view);
+
+  auto buff2_view = buff2.submatrix_view(0, 0, n2, n2);
+  multiple_views(buff1_view, a12, buff2_view);
+
+  Matrix2x<T> S22(n2, n2);
+
+  for (std::size_t i = 0; i < n2; ++i) {
+    for (std::size_t j = 0; j < n2; ++j) {
+      S22(i, j) = a22(i, j) - buff2(i, j);
+    }
+  }
+
+  // inv(S22)
+  auto S22_view = S22.submatrix_view(0, 0, n2, n2);
+  auto inv_S22 = inverse(S22_view);
+  auto inv_S22_view = inv_S22.submatrix_view(0, 0, n2, n2);
+
+  // B12 = -inv(A11) * A12 * inv(S22)
+  auto buff1_b12_view = buff1.submatrix_view(0, 0, n1, n2);
+  multiple_views(inv_a11_view, a12, buff1_b12_view);
+
+  auto buff2_b12_view = buff2.submatrix_view(0, 0, n1, n2);
+  multiple_views(buff1_b12_view, inv_S22_view, buff2_b12_view);
+
+  Matrix2x<T> b12(n1, n2);
+
+  for (std::size_t i = 0; i < n1; ++i) {
+    for (std::size_t j = 0; j < n2; ++j) {
+      b12(i, j) = -buff2(i, j);
+    }
+  }
+
+  // B11 = inv(A11) + inv(A11) * A12 * inv(S22) * A21 * inv(A11)
+  auto buff1_b11_view = buff1.submatrix_view(0, 0, n1, n1);
+  multiple_views(buff2_b12_view, a21, buff1_b11_view);
+
+  auto buff2_b11_view = buff2.submatrix_view(0, 0, n1, n1);
+  multiple_views(buff1_b11_view, inv_a11_view, buff2_b11_view);
+
+  Matrix2x<T> b11(n1, n1);
+
+  for (std::size_t i = 0; i < n1; ++i) {
+    for (std::size_t j = 0; j < n1; ++j) {
+      b11(i, j) = inv_a11(i, j) + buff2(i, j);
+    }
+  }
+
+  // B21 = -inv(S22) * A21 * inv(A11)
+  auto buff1_b21_view = buff1.submatrix_view(0, 0, n2, n1);
+  multiple_views(inv_S22_view, a21, buff1_b21_view);
+
+  auto buff2_b21_view = buff2.submatrix_view(0, 0, n2, n1);
+  multiple_views(buff1_b21_view, inv_a11_view, buff2_b21_view);
+
+  Matrix2x<T> b21(n2, n1);
+
+  for (std::size_t i = 0; i < n2; ++i) {
+    for (std::size_t j = 0; j < n1; ++j) {
+      b21(i, j) = -buff2(i, j);
+    }
+  }
+
+  // B22 = inv(S22)
+  auto b22 = inv_S22;
+
+  // Joining b blocks
+  Matrix2x<T> result(n, n);
+
+  auto put_block = [&result](std::size_t row, std::size_t col,
+                             const Matrix2x<T> &block) {
+    for (std::size_t i = 0; i < block.rows(); ++i) {
+      for (std::size_t j = 0; j < block.cols(); ++j) {
+        result(row + i, col + j) = block(i, j);
+      }
+    }
+  };
+
+  put_block(0, 0, b11);
+  put_block(0, n1, b12);
+  put_block(n1, 0, b21);
+  put_block(n1, n1, b22);
+
+  return result;
+}

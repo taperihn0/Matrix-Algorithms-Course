@@ -1,15 +1,18 @@
+#include "matrix.hpp"
+#include "tests.hpp"
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include "matrix.hpp"
-#include "tests.hpp"
 
 int main() {
-    Matrix2x<float> m({
-        {1., 2., 3.},
-        {1., 2., 3.}
-    });
+  Matrix2x<mfloat> a({{mfloat{2.0f}, mfloat{3.0f}, mfloat{4.0f}},
+                      {mfloat{1.0f}, mfloat{4.0f}, mfloat{5.0f}},
+                      {mfloat{1.0f}, mfloat{2.0f}, mfloat{3.0f}}});
 
-    std::cout << m << std::endl;
-    return 0;
+  auto a_view = a.submatrix_view(0, 0, a.rows(), a.cols());
+
+  auto b = inverse(a_view);
+  std::cout << b << "HEJKA" << std::endl;
+
+  return 0;
 }
