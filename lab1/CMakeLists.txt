@@ -14,3 +14,12 @@ add_executable(MatrixMulLabs
     src/main.cpp
     src/matrix.cpp
 )
+
+add_executable(Test
+    tests/inv.cpp
+    src/matrix.cpp
+)
+
+target_include_directories(Test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)

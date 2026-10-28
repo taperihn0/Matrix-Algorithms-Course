@@ -11,7 +11,7 @@ int main() {
 
   auto a_view = a.submatrix_view(0, 0, a.rows(), a.cols());
 
-  auto b = inverse(a_view);
+  auto b = inverse(a_view, enumMatMult::Binet);
   std::cout << b << "HEJKA" << std::endl;
 
   return 0;

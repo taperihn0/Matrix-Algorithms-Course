@@ -583,14 +583,71 @@ template Matrix2x<mdouble> matrix_mul<mdouble>(const Matrix2x<mdouble> &,
                                                const Matrix2x<mdouble> &,
                                                enumMatMult alg);
 
-template Matrix2x<mfloat> inverse<mfloat>(Matrix2xView<mfloat> &);
-template Matrix2x<mdouble> inverse<mdouble>(Matrix2xView<mdouble> &);
+template Matrix2x<mfloat> inverse<mfloat>(Matrix2xView<mfloat> &, enumMatMult);
+template Matrix2x<mdouble> inverse<mdouble>(Matrix2xView<mdouble> &,
+                                            enumMatMult);
+
+// Multiple views
+template <typename T>
+void multiple_views_binet(Matrix2xView<T> &a, Matrix2xView<T> &b,
+                          Matrix2xView<T> &acc) {
+  acc.fill(T{});
+  binet::binet_matrix_mul_accum(a, b, acc);
+};
+
+template <typename T>
+void multiple_views_strassen(Matrix2xView<T> &a, Matrix2xView<T> &b,
+                             Matrix2xView<T> &acc) {
+  acc.fill(T{});
+  constexpr std::size_t margin = 32uz;
+  size_t n = a.rows();
+  size_t m = b.cols();
+  size_t total_size = n * m;
+
+  if (a.rows() != a.cols() || b.rows() != b.cols()) {
+    default_matrix_mul_accum(a, b, acc);
+    return;
+  }
+
+  auto pbuf = utils::MulIntermediateBuffer<T>(
+      static_cast<std::size_t>((7. / 3.) * total_size) + margin);
+  auto uvbuf = utils::MulIntermediateBuffer<T>(
+      static_cast<std::size_t>((2. / 3.) * total_size) + margin);
+
+  strassen::strassen_matrix_mul_accum(a, b, acc, pbuf, uvbuf);
+}
+
+template <typename T>
+void multiple_views_laderman(Matrix2xView<T> &a, Matrix2xView<T> &b,
+                             Matrix2xView<T> &acc) {
+  acc.fill(T{});
+
+  if (a.rows() != a.cols() || b.rows() != b.cols()) {
+    default_matrix_mul_accum(a, b, acc);
+    return;
+  }
+
+  constexpr std::size_t margin = 32uz;
+  const auto total_size = acc.rows() * acc.cols();
+
+  auto mbuf = utils::MulIntermediateBuffer<T>(
+      static_cast<std::size_t>(2.875 * total_size) + margin);
+
+  auto uvbuf = utils::MulIntermediateBuffer<T>(
+      static_cast<std::size_t>(0.25 * total_size) + margin);
+
+  laderman::laderman_matrix_mul_accum(a, b, acc, mbuf, uvbuf);
+}
 
 template <typename T>
 void multiple_views(Matrix2xView<T> &a, Matrix2xView<T> &b,
-                    Matrix2xView<T> &acc) {
-  acc.fill(T{});
-  default_matrix_mul_accum(a, b, acc);
+                    Matrix2xView<T> &acc, enumMatMult type) {
+  if (type == enumMatMult::Binet)
+    multiple_views_binet(a, b, acc);
+  else if (type == enumMatMult::Laderman)
+    multiple_views_strassen(a, b, acc);
+  else
+    multiple_views_laderman(a, b, acc);
 };
 
 template <typename T>
@@ -604,7 +661,8 @@ Matrix2x<T> mul_views(Matrix2xView<T> &a, Matrix2xView<T> &b) {
   return result;
 }
 
-template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a) {
+template <typename T>
+Matrix2x<T> inverse(Matrix2xView<T> &a, enumMatMult type) {
   const std::size_t n = a.rows();
 
   if (n != a.cols() || n == 0) {
@@ -635,15 +693,15 @@ template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a) {
   auto a22 = a.submatrix_view(n1, n1, n2, n2);
 
   // inv(a11)
-  auto inv_a11 = inverse(a11);
+  auto inv_a11 = inverse(a11, type);
   auto inv_a11_view = inv_a11.submatrix_view(0, 0, n1, n1);
 
   // S22 = A22 - A21 * inv(A11) * A12.
   auto buff1_view = buff1.submatrix_view(0, 0, n2, n1);
-  multiple_views(a21, inv_a11_view, buff1_view);
+  multiple_views(a21, inv_a11_view, buff1_view, type);
 
   auto buff2_view = buff2.submatrix_view(0, 0, n2, n2);
-  multiple_views(buff1_view, a12, buff2_view);
+  multiple_views(buff1_view, a12, buff2_view, type);
 
   Matrix2x<T> S22(n2, n2);
 
@@ -655,15 +713,15 @@ template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a) {
 
   // inv(S22)
   auto S22_view = S22.submatrix_view(0, 0, n2, n2);
-  auto inv_S22 = inverse(S22_view);
+  auto inv_S22 = inverse(S22_view, type);
   auto inv_S22_view = inv_S22.submatrix_view(0, 0, n2, n2);
 
   // B12 = -inv(A11) * A12 * inv(S22)
   auto buff1_b12_view = buff1.submatrix_view(0, 0, n1, n2);
-  multiple_views(inv_a11_view, a12, buff1_b12_view);
+  multiple_views(inv_a11_view, a12, buff1_b12_view, type);
 
   auto buff2_b12_view = buff2.submatrix_view(0, 0, n1, n2);
-  multiple_views(buff1_b12_view, inv_S22_view, buff2_b12_view);
+  multiple_views(buff1_b12_view, inv_S22_view, buff2_b12_view, type);
 
   Matrix2x<T> b12(n1, n2);
 
@@ -675,10 +733,10 @@ template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a) {
 
   // B11 = inv(A11) + inv(A11) * A12 * inv(S22) * A21 * inv(A11)
   auto buff1_b11_view = buff1.submatrix_view(0, 0, n1, n1);
-  multiple_views(buff2_b12_view, a21, buff1_b11_view);
+  multiple_views(buff2_b12_view, a21, buff1_b11_view, type);
 
   auto buff2_b11_view = buff2.submatrix_view(0, 0, n1, n1);
-  multiple_views(buff1_b11_view, inv_a11_view, buff2_b11_view);
+  multiple_views(buff1_b11_view, inv_a11_view, buff2_b11_view, type);
 
   Matrix2x<T> b11(n1, n1);
 
@@ -690,10 +748,10 @@ template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a) {
 
   // B21 = -inv(S22) * A21 * inv(A11)
   auto buff1_b21_view = buff1.submatrix_view(0, 0, n2, n1);
-  multiple_views(inv_S22_view, a21, buff1_b21_view);
+  multiple_views(inv_S22_view, a21, buff1_b21_view, type);
 
   auto buff2_b21_view = buff2.submatrix_view(0, 0, n2, n1);
-  multiple_views(buff1_b21_view, inv_a11_view, buff2_b21_view);
+  multiple_views(buff1_b21_view, inv_a11_view, buff2_b21_view, type);
 
   Matrix2x<T> b21(n2, n1);
 

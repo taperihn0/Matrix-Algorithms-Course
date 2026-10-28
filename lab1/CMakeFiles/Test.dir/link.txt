@@ -1,0 +1,1 @@
+/usr/bin/c++ -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/Test.dir/tests/inv.cpp.o CMakeFiles/Test.dir/src/matrix.cpp.o -o Test

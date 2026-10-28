@@ -129,6 +129,19 @@ MatrixMulLabs/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MatrixMulLabs.dir/build.make CMakeFiles/MatrixMulLabs.dir/build
 .PHONY : MatrixMulLabs/fast
 
+#=============================================================================
+# Target rules for targets named Test
+
+# Build rule for target.
+Test: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 Test
+.PHONY : Test
+
+# fast build rule for target.
+Test/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/build
+.PHONY : Test/fast
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -159,6 +172,7 @@ src/matrix.o: src/matrix.cpp.o
 # target to build an object file
 src/matrix.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MatrixMulLabs.dir/build.make CMakeFiles/MatrixMulLabs.dir/src/matrix.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/src/matrix.cpp.o
 .PHONY : src/matrix.cpp.o
 
 src/matrix.i: src/matrix.cpp.i
@@ -167,6 +181,7 @@ src/matrix.i: src/matrix.cpp.i
 # target to preprocess a source file
 src/matrix.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MatrixMulLabs.dir/build.make CMakeFiles/MatrixMulLabs.dir/src/matrix.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/src/matrix.cpp.i
 .PHONY : src/matrix.cpp.i
 
 src/matrix.s: src/matrix.cpp.s
@@ -175,7 +190,32 @@ src/matrix.s: src/matrix.cpp.s
 # target to generate assembly for a file
 src/matrix.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MatrixMulLabs.dir/build.make CMakeFiles/MatrixMulLabs.dir/src/matrix.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/src/matrix.cpp.s
 .PHONY : src/matrix.cpp.s
+
+tests/inv.o: tests/inv.cpp.o
+.PHONY : tests/inv.o
+
+# target to build an object file
+tests/inv.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/tests/inv.cpp.o
+.PHONY : tests/inv.cpp.o
+
+tests/inv.i: tests/inv.cpp.i
+.PHONY : tests/inv.i
+
+# target to preprocess a source file
+tests/inv.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/tests/inv.cpp.i
+.PHONY : tests/inv.cpp.i
+
+tests/inv.s: tests/inv.cpp.s
+.PHONY : tests/inv.s
+
+# target to generate assembly for a file
+tests/inv.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Test.dir/build.make CMakeFiles/Test.dir/tests/inv.cpp.s
+.PHONY : tests/inv.cpp.s
 
 # Help Target
 help:
@@ -186,12 +226,16 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... MatrixMulLabs"
+	@echo "... Test"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
 	@echo "... src/matrix.o"
 	@echo "... src/matrix.i"
 	@echo "... src/matrix.s"
+	@echo "... tests/inv.o"
+	@echo "... tests/inv.i"
+	@echo "... tests/inv.s"
 .PHONY : help
 
 

@@ -1,3 +1,4 @@
 /Users/kajetanserwecinski/Documents/Programming/Matrix-Algorithms-Course/lab1/CMakeFiles/MatrixMulLabs.dir
+/Users/kajetanserwecinski/Documents/Programming/Matrix-Algorithms-Course/lab1/CMakeFiles/Test.dir
 /Users/kajetanserwecinski/Documents/Programming/Matrix-Algorithms-Course/lab1/CMakeFiles/edit_cache.dir
 /Users/kajetanserwecinski/Documents/Programming/Matrix-Algorithms-Course/lab1/CMakeFiles/rebuild_cache.dir

@@ -57,6 +57,16 @@ public:
   T *data();
   const T *data() const;
 
+  Matrix2x<T> transpose() {
+    Matrix2x<T> transposed(cols(), rows());
+    for (int i = 0; i < rows(); ++i) {
+      for (int j = 0; j < cols(); ++j) {
+        transposed(j, i) = (*this)(i, j);
+      }
+    }
+    return transposed;
+  }
+
 private:
   void check_index(size_type i, size_type j) const;
 
@@ -513,7 +523,7 @@ template <typename T>
 Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
                        enumMatMult alg);
 
-template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a);
+template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a, enumMatMult type);
 
 using Matrix2xmf = Matrix2x<mfloat>;
 using Matrix2xmd = Matrix2x<mdouble>;
