@@ -1,3 +1,5 @@
+#include "tests.hpp"
+
 #include <iostream>
 
 int main() {

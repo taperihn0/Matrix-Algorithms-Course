@@ -37,13 +37,3 @@ add_executable(MatrixMulLabs
 )
 
 target_link_libraries(MatrixMulLabs PRIVATE lab2_algorithms)
-
-enable_testing()
-
-add_executable(TestInverse tests/inverse.cpp)
-target_link_libraries(TestInverse PRIVATE lab2_algorithms)
-add_test(NAME inverse COMMAND TestInverse)
-
-add_executable(TestLU tests/lu.cpp)
-target_link_libraries(TestLU PRIVATE lab2_algorithms)
-add_test(NAME lu COMMAND TestLU)
