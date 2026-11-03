@@ -524,6 +524,7 @@ Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
                        enumMatMult alg);
 
 template <typename T> Matrix2x<T> inverse(Matrix2xView<T> &a, enumMatMult type);
+template <typename T> Matrix2x<T> inverse_laderman(Matrix2xView<T> &a);
 
 template <typename T>
 std::pair<Matrix2x<T>, Matrix2x<T>> LU(Matrix2xView<T> &a, enumMatMult type);

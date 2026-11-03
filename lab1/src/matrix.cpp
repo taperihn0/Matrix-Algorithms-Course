@@ -588,6 +588,9 @@ template Matrix2x<mfloat> inverse<mfloat>(Matrix2xView<mfloat> &, enumMatMult);
 template Matrix2x<mdouble> inverse<mdouble>(Matrix2xView<mdouble> &,
                                             enumMatMult);
 
+template Matrix2x<mfloat> inverse_laderman<mfloat>(Matrix2xView<mfloat> &);
+template Matrix2x<mdouble> inverse_laderman<mdouble>(Matrix2xView<mdouble> &);
+
 // Multiple views
 template <typename T>
 void multiple_views_binet(Matrix2xView<T> &a, Matrix2xView<T> &b,
@@ -601,14 +604,39 @@ void multiple_views_strassen(Matrix2xView<T> &a, Matrix2xView<T> &b,
                              Matrix2xView<T> &acc) {
   acc.fill(T{});
   constexpr std::size_t margin = 32uz;
-  size_t n = a.rows();
-  size_t m = b.cols();
-  size_t total_size = n * m;
 
   if (a.rows() != a.cols() || b.rows() != b.cols()) {
-    default_matrix_mul_accum(a, b, acc);
+    // Add padding
+    const std::size_t p = a.rows();
+    const std::size_t q = a.cols();
+    const std::size_t r = b.cols();
+    std::size_t m = std::max({p, q, r});
+
+    Matrix2x<T> a_padded(m, m);
+    Matrix2x<T> b_padded(m, m);
+
+    for (std::size_t i = 0; i < p; ++i)
+      for (std::size_t j = 0; j < q; ++j)
+        a_padded(i, j) = a(i, j);
+
+    for (std::size_t i = 0; i < q; ++i)
+      for (std::size_t j = 0; j < r; ++j)
+        b_padded(i, j) = b(i, j);
+
+    auto ap = a_padded.submatrix_view(0, 0, m, m);
+    auto bp = b_padded.submatrix_view(0, 0, m, m);
+
+    Matrix2x<T> result_padded(m, m);
+    auto rp = result_padded.submatrix_view(0, 0, m, m);
+    multiple_views_strassen(ap, bp, rp);
+
+    for (std::size_t i = 0; i < p; ++i)
+      for (std::size_t j = 0; j < r; ++j)
+        acc(i, j) = result_padded(i, j);
     return;
   }
+
+  const std::size_t total_size = a.rows() * b.cols();
 
   auto pbuf = utils::MulIntermediateBuffer<T>(
       static_cast<std::size_t>((7. / 3.) * total_size) + margin);
@@ -624,7 +652,32 @@ void multiple_views_laderman(Matrix2xView<T> &a, Matrix2xView<T> &b,
   acc.fill(T{});
 
   if (a.rows() != a.cols() || b.rows() != b.cols()) {
-    default_matrix_mul_accum(a, b, acc);
+    const std::size_t p = a.rows();
+    const std::size_t q = a.cols();
+    const std::size_t r = b.cols();
+    std::size_t m = std::max({p, q, r});
+
+    Matrix2x<T> a_padded(m, m);
+    Matrix2x<T> b_padded(m, m);
+
+    for (std::size_t i = 0; i < p; ++i)
+      for (std::size_t j = 0; j < q; ++j)
+        a_padded(i, j) = a(i, j);
+
+    for (std::size_t i = 0; i < q; ++i)
+      for (std::size_t j = 0; j < r; ++j)
+        b_padded(i, j) = b(i, j);
+
+    auto ap = a_padded.submatrix_view(0, 0, m, m);
+    auto bp = b_padded.submatrix_view(0, 0, m, m);
+
+    Matrix2x<T> result_padded(m, m);
+    auto rp = result_padded.submatrix_view(0, 0, m, m);
+    multiple_views_laderman(ap, bp, rp);
+
+    for (std::size_t i = 0; i < p; ++i)
+      for (std::size_t j = 0; j < r; ++j)
+        acc(i, j) = result_padded(i, j);
     return;
   }
 
@@ -645,7 +698,7 @@ void multiple_views(Matrix2xView<T> &a, Matrix2xView<T> &b,
                     Matrix2xView<T> &acc, enumMatMult type) {
   if (type == enumMatMult::Binet)
     multiple_views_binet(a, b, acc);
-  else if (type == enumMatMult::Laderman)
+  else if (type == enumMatMult::Strassen)
     multiple_views_strassen(a, b, acc);
   else
     multiple_views_laderman(a, b, acc);
@@ -662,12 +715,241 @@ Matrix2x<T> mul_views(Matrix2xView<T> &a, Matrix2xView<T> &b) {
   return result;
 }
 
+template <typename T> Matrix2x<T> inverse_laderman(Matrix2xView<T> &a) {
+  const std::size_t n = a.rows();
+
+  if (n != a.cols() || n == 0) {
+    throw std::invalid_argument("inverse_laderman: invalid matrix size");
+  }
+
+  if (n == 1) {
+    if (a(0, 0) == T{}) {
+      throw std::invalid_argument("inverse_laderman: singular matrix");
+    }
+    Matrix2x<T> result(1, 1);
+    result(0, 0) = T{1} / a(0, 0);
+    return result;
+  }
+
+  if (n == 2) {
+    T det = a(0, 0) * a(1, 1) - a(0, 1) * a(1, 0);
+    if (det == T{}) {
+      throw std::invalid_argument("inverse_laderman: singular matrix");
+    }
+    Matrix2x<T> result(2, 2);
+    result(0, 0) = a(1, 1) / det;
+    result(0, 1) = -a(0, 1) / det;
+    result(1, 0) = -a(1, 0) / det;
+    result(1, 1) = a(0, 0) / det;
+    return result;
+  }
+
+  const std::size_t n1 = n / 3;
+  const std::size_t n2 = n / 3;
+  const std::size_t n3 = n - n1 - n2;
+
+  const std::size_t r0 = 0, r1 = n1, r2 = n1 + n2;
+  const std::size_t c0 = 0, c1 = n1, c2 = n1 + n2;
+
+  auto a11 = a.submatrix_view(r0, c0, n1, n1);
+  auto a12 = a.submatrix_view(r0, c1, n1, n2);
+  auto a13 = a.submatrix_view(r0, c2, n1, n3);
+  auto a21 = a.submatrix_view(r1, c0, n2, n1);
+  auto a22 = a.submatrix_view(r1, c1, n2, n2);
+  auto a23 = a.submatrix_view(r1, c2, n2, n3);
+  auto a31 = a.submatrix_view(r2, c0, n3, n1);
+  auto a32 = a.submatrix_view(r2, c1, n3, n2);
+  auto a33 = a.submatrix_view(r2, c2, n3, n3);
+
+  auto mul = [](Matrix2xView<T> &x, Matrix2xView<T> &y) -> Matrix2x<T> {
+    Matrix2x<T> res(x.rows(), y.cols());
+    auto res_view = res.submatrix_view(0, 0, x.rows(), y.cols());
+    multiple_views_laderman(x, y, res_view);
+    return res;
+  };
+
+  // X1 = inv(A11)
+  auto X1 = inverse_laderman(a11);
+  auto X1_view = X1.submatrix_view(0, 0, n1, n1);
+
+  auto L21 = mul(a21, X1_view);
+  auto L21_view = L21.submatrix_view(0, 0, n2, n1);
+
+  auto L31 = mul(a31, X1_view);
+  auto L31_view = L31.submatrix_view(0, 0, n3, n1);
+
+  auto U12 = mul(X1_view, a12);
+  auto U12_view = U12.submatrix_view(0, 0, n1, n2);
+
+  auto U13 = mul(X1_view, a13);
+  auto U13_view = U13.submatrix_view(0, 0, n1, n3);
+
+  // Schur 1
+  auto L21_A12 = mul(L21_view, a12);
+  Matrix2x<T> S22(n2, n2);
+  for (std::size_t i = 0; i < n2; ++i)
+    for (std::size_t j = 0; j < n2; ++j)
+      S22(i, j) = a22(i, j) - L21_A12(i, j);
+
+  auto L21_A13 = mul(L21_view, a13);
+  Matrix2x<T> S23(n2, n3);
+  for (std::size_t i = 0; i < n2; ++i)
+    for (std::size_t j = 0; j < n3; ++j)
+      S23(i, j) = a23(i, j) - L21_A13(i, j);
+
+  auto L31_A12 = mul(L31_view, a12);
+  Matrix2x<T> S32(n3, n2);
+  for (std::size_t i = 0; i < n3; ++i)
+    for (std::size_t j = 0; j < n2; ++j)
+      S32(i, j) = a32(i, j) - L31_A12(i, j);
+
+  auto L31_A13 = mul(L31_view, a13);
+  Matrix2x<T> S33(n3, n3);
+  for (std::size_t i = 0; i < n3; ++i)
+    for (std::size_t j = 0; j < n3; ++j)
+      S33(i, j) = a33(i, j) - L31_A13(i, j);
+
+  // INV(S22)
+  auto S22_view = S22.submatrix_view(0, 0, n2, n2);
+  auto X2 = inverse_laderman(S22_view);
+  auto X2_view = X2.submatrix_view(0, 0, n2, n2);
+
+  auto S32_view = S32.submatrix_view(0, 0, n3, n2);
+  auto S23_view = S23.submatrix_view(0, 0, n2, n3);
+
+  auto L32 = mul(S32_view, X2_view);
+  auto L32_view = L32.submatrix_view(0, 0, n3, n2);
+
+  auto U23 = mul(X2_view, S23_view);
+  auto U23_view = U23.submatrix_view(0, 0, n2, n3);
+
+  // Schur 2
+  auto L32_S23 = mul(L32_view, S23_view);
+  Matrix2x<T> S33_prime(n3, n3);
+  for (std::size_t i = 0; i < n3; ++i)
+    for (std::size_t j = 0; j < n3; ++j)
+      S33_prime(i, j) = S33(i, j) - L32_S23(i, j);
+
+  // inv(S33)
+  auto S33_prime_view = S33_prime.submatrix_view(0, 0, n3, n3);
+  auto X3 = inverse_laderman(S33_prime_view);
+  auto X3_view = X3.submatrix_view(0, 0, n3, n3);
+
+  // tilde
+  Matrix2x<T> L_tilde_21(n2, n1);
+  for (std::size_t i = 0; i < n2; ++i)
+    for (std::size_t j = 0; j < n1; ++j)
+      L_tilde_21(i, j) = -L21(i, j);
+
+  Matrix2x<T> L_tilde_32(n3, n2);
+  for (std::size_t i = 0; i < n3; ++i)
+    for (std::size_t j = 0; j < n2; ++j)
+      L_tilde_32(i, j) = -L32(i, j);
+
+  auto L32_L21 = mul(L32_view, L21_view);
+  Matrix2x<T> L_tilde_31(n3, n1);
+  for (std::size_t i = 0; i < n3; ++i)
+    for (std::size_t j = 0; j < n1; ++j)
+      L_tilde_31(i, j) = L32_L21(i, j) - L31(i, j);
+
+  Matrix2x<T> U_tilde_12(n1, n2);
+  for (std::size_t i = 0; i < n1; ++i)
+    for (std::size_t j = 0; j < n2; ++j)
+      U_tilde_12(i, j) = -U12(i, j);
+
+  Matrix2x<T> U_tilde_23(n2, n3);
+  for (std::size_t i = 0; i < n2; ++i)
+    for (std::size_t j = 0; j < n3; ++j)
+      U_tilde_23(i, j) = -U23(i, j);
+
+  auto U12_U23 = mul(U12_view, U23_view);
+  Matrix2x<T> U_tilde_13(n1, n3);
+  for (std::size_t i = 0; i < n1; ++i)
+    for (std::size_t j = 0; j < n3; ++j)
+      U_tilde_13(i, j) = U12_U23(i, j) - U13(i, j);
+
+  // W = U_tilde * D^(-1)
+  auto U_tilde_12_view = U_tilde_12.submatrix_view(0, 0, n1, n2);
+  auto W12 = mul(U_tilde_12_view, X2_view);
+  auto W12_view = W12.submatrix_view(0, 0, n1, n2);
+
+  auto U_tilde_13_view = U_tilde_13.submatrix_view(0, 0, n1, n3);
+  auto W13 = mul(U_tilde_13_view, X3_view);
+  auto W13_view = W13.submatrix_view(0, 0, n1, n3);
+
+  auto U_tilde_23_view = U_tilde_23.submatrix_view(0, 0, n2, n3);
+  auto W23 = mul(U_tilde_23_view, X3_view);
+  auto W23_view = W23.submatrix_view(0, 0, n2, n3);
+
+  // B = W * L_tilde
+  auto L_tilde_21_view = L_tilde_21.submatrix_view(0, 0, n2, n1);
+  auto L_tilde_32_view = L_tilde_32.submatrix_view(0, 0, n3, n2);
+  auto L_tilde_31_view = L_tilde_31.submatrix_view(0, 0, n3, n1);
+
+  auto B32 = mul(X3_view, L_tilde_32_view);
+  auto B31 = mul(X3_view, L_tilde_31_view);
+
+  auto W23_L32 = mul(W23_view, L_tilde_32_view);
+  Matrix2x<T> B22(n2, n2);
+  for (std::size_t i = 0; i < n2; ++i)
+    for (std::size_t j = 0; j < n2; ++j)
+      B22(i, j) = X2(i, j) + W23_L32(i, j);
+
+  auto X2_L21 = mul(X2_view, L_tilde_21_view);
+  auto W23_L31 = mul(W23_view, L_tilde_31_view);
+  Matrix2x<T> B21(n2, n1);
+  for (std::size_t i = 0; i < n2; ++i)
+    for (std::size_t j = 0; j < n1; ++j)
+      B21(i, j) = X2_L21(i, j) + W23_L31(i, j);
+
+  auto W13_L32 = mul(W13_view, L_tilde_32_view);
+  Matrix2x<T> B12(n1, n2);
+  for (std::size_t i = 0; i < n1; ++i)
+    for (std::size_t j = 0; j < n2; ++j)
+      B12(i, j) = W12(i, j) + W13_L32(i, j);
+
+  auto W12_L21 = mul(W12_view, L_tilde_21_view);
+  auto W13_L31 = mul(W13_view, L_tilde_31_view);
+  Matrix2x<T> B11(n1, n1);
+  for (std::size_t i = 0; i < n1; ++i)
+    for (std::size_t j = 0; j < n1; ++j)
+      B11(i, j) = X1(i, j) + W12_L21(i, j) + W13_L31(i, j);
+
+  Matrix2x<T> result(n, n);
+  auto put_block = [&result](std::size_t row, std::size_t col,
+                             const Matrix2x<T> &block) {
+    for (std::size_t i = 0; i < block.rows(); ++i) {
+      for (std::size_t j = 0; j < block.cols(); ++j) {
+        result(row + i, col + j) = block(i, j);
+      }
+    }
+  };
+
+  put_block(r0, c0, B11);
+  put_block(r0, c1, B12);
+  put_block(r0, c2, W13);
+
+  put_block(r1, c0, B21);
+  put_block(r1, c1, B22);
+  put_block(r1, c2, W23);
+
+  put_block(r2, c0, B31);
+  put_block(r2, c1, B32);
+  put_block(r2, c2, X3);
+
+  return result;
+}
+
 template <typename T>
 Matrix2x<T> inverse(Matrix2xView<T> &a, enumMatMult type) {
   const std::size_t n = a.rows();
 
   if (n != a.cols() || n == 0) {
     throw std::invalid_argument("inverse: invalid matrix size");
+  }
+
+  if (type == enumMatMult::Laderman) {
+    return inverse_laderman(a);
   }
 
   if (n == 1) {
