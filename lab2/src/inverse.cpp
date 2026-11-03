@@ -3,17 +3,6 @@
 #include "lab1/src/matrix_utils.hpp"
 #include <cassert>
 
-// Recursive block inverse (almost allocation-free: every intermediate block
-// lives in the caller provided IntermediateBuffer instead of a new Matrix2x).
-//
-//   A = [ A11 A12 ]      A^-1 = [ B11 B12 ]
-//       [ A21 A22 ]             [ B21 B22 ]
-//
-//   S    = A22 - A21 * A11^-1 * A12
-//   B11  = A11^-1 + A11^-1 * A12 * S^-1 * A21 * A11^-1
-//   B12  = -A11^-1 * A12 * S^-1
-//   B21  = -S^-1 * A21 * A11^-1
-//   B22  = S^-1
 template <typename T, enumMatMult Alg>
 void inverse_impl(Matrix2xView<T> &a, Matrix2xView<T> &acc,
                   IntermediateBuffer<T> &buf) {
@@ -118,8 +107,6 @@ Matrix2x<T> &Matrix2x<T>::inverse(Matrix2x<T> &acc, enumMatMult alg) {
   Matrix2xView<T> a_view(data(), cols(), 0, 0, rows(), cols());
   Matrix2xView<T> acc_view(acc.data(), acc.cols(), 0, 0, acc.rows(), acc.cols());
 
-  // Worst case concurrent scratch is below 3 * n^2 elements (the peak is at
-  // n == 3), so a single arena covers the whole recursion.
   IntermediateBuffer<T> buf(3 * rows() * cols());
 
   switch (alg) {
