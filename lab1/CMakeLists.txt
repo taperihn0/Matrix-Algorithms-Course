@@ -13,5 +13,10 @@ endif()
 add_executable(MatrixMulLabs
     src/main.cpp
     src/matrix.cpp
+    src/matrix_utils.cpp
     src/benchmark.cpp
+)
+
+target_include_directories(MatrixMulLabs PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )

@@ -13,13 +13,13 @@ Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
                        enumMatMult alg) {
   switch (alg) {
   case enumMatMult::Default:
-    return utils::matrix_mul_alg<T, enumMatMult::Default>(a, b);
+    return mutils::matrix_mul_alg<T, enumMatMult::Default>(a, b);
   case enumMatMult::Binet:
-    return utils::matrix_mul_alg<T, enumMatMult::Binet>(a, b);
+    return mutils::matrix_mul_alg<T, enumMatMult::Binet>(a, b);
   case enumMatMult::Strassen:
-    return utils::matrix_mul_alg<T, enumMatMult::Strassen>(a, b);
+    return mutils::matrix_mul_alg<T, enumMatMult::Strassen>(a, b);
   case enumMatMult::Laderman:
-    return utils::matrix_mul_alg<T, enumMatMult::Laderman>(a, b);
+    return mutils::matrix_mul_alg<T, enumMatMult::Laderman>(a, b);
   default:
     assert(false);
     return {};

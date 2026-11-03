@@ -1,5 +1,7 @@
 #include "matrix_utils.hpp"
 #include "matrix.hpp"
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <vector>
 
@@ -522,7 +524,88 @@ Matrix2x<T> matrix_mul_alg(const Matrix2x<T> &a, const Matrix2x<T> &b) {
   return dst;
 }
 
-} // namespace utils
+template <typename T, enumMatMult Alg>
+void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
+                    Matrix2xView<T> &acc) {
+  assert(a.cols() == b.rows());
+  assert(a.rows() == acc.rows() && b.cols() == acc.cols());
+
+  acc.fill(static_cast<T>(0));
+
+  if constexpr (Alg == enumMatMult::Default) {
+    default_matrix_mul_accum(a, b, acc);
+  } else if constexpr (Alg == enumMatMult::Binet) {
+    binet::binet_matrix_mul_accum(a, b, acc);
+  } else {
+    // Strassen and Laderman work on square blocks only. Sub-blocks of odd
+    // sized matrices are rectangular, so pad them to a common square size,
+    // multiply and copy the result back.
+    const auto a_rows = a.rows();
+    const auto a_cols = a.cols();
+    const auto b_cols = b.cols();
+
+    if (a_rows != a_cols || a_cols != b_cols) {
+      const auto m = std::max({a_rows, a_cols, b_cols});
+
+      Matrix2x<T> a_padded(m, m);
+      Matrix2x<T> b_padded(m, m);
+      Matrix2x<T> res_padded(m, m);
+
+      for (std::size_t i = 0; i < a_rows; ++i) {
+        for (std::size_t j = 0; j < a_cols; ++j) {
+          a_padded(i, j) = a(i, j);
+        }
+      }
+
+      for (std::size_t i = 0; i < a_cols; ++i) {
+        for (std::size_t j = 0; j < b_cols; ++j) {
+          b_padded(i, j) = b(i, j);
+        }
+      }
+
+      auto a_view = a_padded.submatrix_view(0, 0, m, m);
+      auto b_view = b_padded.submatrix_view(0, 0, m, m);
+      auto res_view = res_padded.submatrix_view(0, 0, m, m);
+
+      matrix_mul_alg<T, Alg>(a_view, b_view, res_view);
+
+      for (std::size_t i = 0; i < a_rows; ++i) {
+        for (std::size_t j = 0; j < b_cols; ++j) {
+          acc(i, j) = res_padded(i, j);
+        }
+      }
+
+      return;
+    }
+
+    static constexpr auto SafetyBufMargin = 32uz;
+    const auto total_size = a_rows * b_cols;
+
+    if constexpr (Alg == enumMatMult::Strassen) {
+      const auto pbuf_size =
+          static_cast<std::size_t>(2.34 * total_size) + SafetyBufMargin;
+      const auto uvbuf_size =
+          static_cast<std::size_t>(0.67 * total_size) + SafetyBufMargin;
+
+      IntermediateBuffer<T> pbuf(pbuf_size);
+      IntermediateBuffer<T> uvbuf(uvbuf_size);
+
+      strassen::strassen_matrix_mul_accum(a, b, acc, pbuf, uvbuf);
+    } else {
+      const auto mbuf_size =
+          static_cast<std::size_t>(2.875 * total_size) + SafetyBufMargin;
+      const auto uvbuf_size =
+          static_cast<std::size_t>(0.25 * total_size) + SafetyBufMargin;
+
+      IntermediateBuffer<T> mbuf(mbuf_size);
+      IntermediateBuffer<T> uvbuf(uvbuf_size);
+
+      laderman::laderman_matrix_mul_accum(a, b, acc, mbuf, uvbuf);
+    }
+  }
+}
+
+} // namespace mutils
 
 template void mutils::binet::binet_matrix_mul_accum<mfloat>(
     const Matrix2xView<mfloat> &, const Matrix2xView<mfloat> &,
@@ -568,3 +651,31 @@ template Matrix2x<mfloat> mutils::matrix_mul_alg<mfloat, enumMatMult::Laderman>(
     const Matrix2x<mfloat> &, const Matrix2x<mfloat> &);
 template Matrix2x<mdouble> mutils::matrix_mul_alg<mdouble, enumMatMult::Laderman>(
     const Matrix2x<mdouble> &, const Matrix2x<mdouble> &);
+
+template void mutils::matrix_mul_alg<mfloat, enumMatMult::Default>(
+    const Matrix2xView<mfloat> &, const Matrix2xView<mfloat> &,
+    Matrix2xView<mfloat> &);
+template void mutils::matrix_mul_alg<mdouble, enumMatMult::Default>(
+    const Matrix2xView<mdouble> &, const Matrix2xView<mdouble> &,
+    Matrix2xView<mdouble> &);
+
+template void mutils::matrix_mul_alg<mfloat, enumMatMult::Binet>(
+    const Matrix2xView<mfloat> &, const Matrix2xView<mfloat> &,
+    Matrix2xView<mfloat> &);
+template void mutils::matrix_mul_alg<mdouble, enumMatMult::Binet>(
+    const Matrix2xView<mdouble> &, const Matrix2xView<mdouble> &,
+    Matrix2xView<mdouble> &);
+
+template void mutils::matrix_mul_alg<mfloat, enumMatMult::Strassen>(
+    const Matrix2xView<mfloat> &, const Matrix2xView<mfloat> &,
+    Matrix2xView<mfloat> &);
+template void mutils::matrix_mul_alg<mdouble, enumMatMult::Strassen>(
+    const Matrix2xView<mdouble> &, const Matrix2xView<mdouble> &,
+    Matrix2xView<mdouble> &);
+
+template void mutils::matrix_mul_alg<mfloat, enumMatMult::Laderman>(
+    const Matrix2xView<mfloat> &, const Matrix2xView<mfloat> &,
+    Matrix2xView<mfloat> &);
+template void mutils::matrix_mul_alg<mdouble, enumMatMult::Laderman>(
+    const Matrix2xView<mdouble> &, const Matrix2xView<mdouble> &,
+    Matrix2xView<mdouble> &);

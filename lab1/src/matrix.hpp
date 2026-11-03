@@ -77,9 +77,6 @@ public:
   T *data();
   const T *data() const;
 
-  static Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
-                                enumMatMult alg = enumMatMult::Binet);
-
   Matrix2x<T> &inverse(Matrix2x<T> &acc, enumMatMult alg = enumMatMult::Binet);
 
 private:
@@ -89,6 +86,10 @@ private:
   size_type m_cols = 0;
   std::unique_ptr<T[]> m_data = nullptr;
 };
+
+template <typename T>
+Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
+                       enumMatMult alg = enumMatMult::Binet);
 
 template <typename T> class Matrix2xView {
 public:

@@ -2,6 +2,7 @@
 
 #include "../src/types.hpp"
 #include "intermediate_buffer.hpp"
+#include "matrix.hpp"
 
 template <typename T> class Matrix2xView;
 
@@ -35,5 +36,10 @@ void laderman_matrix_mul_accum(const Matrix2xView<T> &a,
 
 template <typename T, enumMatMult Alg>
 Matrix2x<T> matrix_mul_alg(const Matrix2x<T> &a, const Matrix2x<T> &b);
+
+// Overwrites acc with a * b, without allocating result storage.
+template <typename T, enumMatMult Alg>
+void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
+                    Matrix2xView<T> &acc);
 
 } // namespace mutils
