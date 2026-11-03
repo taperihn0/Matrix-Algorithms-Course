@@ -94,7 +94,7 @@ static void check_close(const Matd &got, const Matd &expected, double eps,
 // Bounds, powers of two, odd/even sizes and multiples of 3 - they hit the
 // base cases, the rectangular padding and the recursion remainders.
 static constexpr Matd::size_type kTestSizes[] = {1, 2, 3, 4, 5, 6,
-                                                 7, 8, 9, 10, 12, 16};
+                                                 7, 8, 9, 10, 12, 16, 70};
 
 static void test_inverse_algorithm(enumMatMult alg, const char *name) {
   for (const auto n : kTestSizes) {

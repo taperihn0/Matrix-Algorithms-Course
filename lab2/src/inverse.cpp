@@ -9,7 +9,7 @@ void inverse_impl(Matrix2xView<T> &a, Matrix2xView<T> &acc,
   const auto n = acc.rows();
   assert(n == a.rows() && n == a.cols());
 
-  if (n == 1) {
+  if (n == 1) { // base case, regular inverse
     acc(0, 0) = static_cast<T>(1) / a(0, 0);
     return;
   }
@@ -19,7 +19,7 @@ void inverse_impl(Matrix2xView<T> &a, Matrix2xView<T> &acc,
 
   const auto buf_mark = buf.mark();
 
-  // A_INV = A11^-1
+  // A_inv = A11^-1
   auto ainv = buf.query_view(n_l, n_l);
 
   auto a11 = Matrix2xView<T>(a, 0, 0, n_l, n_l);
@@ -34,25 +34,26 @@ void inverse_impl(Matrix2xView<T> &a, Matrix2xView<T> &acc,
 
   inverse_impl<T, Alg>(a11, ainv, buf);
 
-  // S = A21 * A11^-1, then S = A22 - S * A12
+  // Temporary storage matricies
   auto u = buf.query_view(n_r, n_r);
   auto s = buf.query_view(n_r, n_r);
 
+  // S = (A22 - A21 * A11^-1 * A12)^-1
   auto u_nr_nl = Matrix2xView<T>(u, 0, 0, n_r, n_l);
   mutils::matrix_mul_alg<T, Alg>(a21, ainv, u_nr_nl);
   mutils::matrix_mul_alg<T, Alg>(u_nr_nl, a12, s);
 
   s.matrix_addsub_accum_into({&a22}, {&s});
 
-  // S^-1 is kept in its own block: S itself (and the A blocks) may still be
-  // needed below, and B12/B21/B22 all read S^-1.
-  auto sinv = buf.query_view(n_r, n_r);
+  // A trick: we know that at the end we should assign 
+  // inverse of S to B22 submatrix, so why not just work on reference?
+  auto& sinv = b22;
   inverse_impl<T, Alg>(s, sinv, buf);
 
   // B11 = A11^-1 + A11^-1 * A12 * S^-1 * A21 * A11^-1
   auto v = buf.query_view(n_r, n_r);
   auto w = buf.query_view(n_r, n_r);
-
+  
   auto u_nl_nr = Matrix2xView<T>(u, 0, 0, n_l, n_r);
   auto v_nl_nl = Matrix2xView<T>(v, 0, 0, n_l, n_l);
   auto w_nl_nl = Matrix2xView<T>(w, 0, 0, n_l, n_l);
@@ -88,9 +89,7 @@ void inverse_impl(Matrix2xView<T> &a, Matrix2xView<T> &acc,
   });
 
   // B22 = S^-1
-  b22.looped_elem_assign(b22, [&](std::size_t i, std::size_t j) {
-    return sinv(i, j);
-  });
+  // We already done that via reference
 
   buf.revert_to(buf_mark);
 }
@@ -107,7 +106,9 @@ Matrix2x<T> &Matrix2x<T>::inverse(Matrix2x<T> &acc, enumMatMult alg) {
   Matrix2xView<T> a_view(data(), cols(), 0, 0, rows(), cols());
   Matrix2xView<T> acc_view(acc.data(), acc.cols(), 0, 0, acc.rows(), acc.cols());
 
-  IntermediateBuffer<T> buf(3 * rows() * cols());
+  static constexpr auto SafetyBufMargin = 32uz;
+
+  IntermediateBuffer<T> buf(5. / 3. * rows() *  cols() + SafetyBufMargin); // We can do better I guess
 
   switch (alg) {
   case enumMatMult::Default:
