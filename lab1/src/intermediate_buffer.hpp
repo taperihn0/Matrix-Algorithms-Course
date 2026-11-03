@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 template <typename T> class Matrix2xView;
