@@ -1,4 +1,4 @@
-# Matrix multiplication - lab1
+# Matrix inverse - lab2
 
 ## Configuration
 
