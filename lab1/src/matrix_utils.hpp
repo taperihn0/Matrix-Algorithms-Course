@@ -42,4 +42,10 @@ template <typename T, enumMatMult Alg>
 void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
                     Matrix2xView<T> &acc);
 
+// Block LU factorization without pivoting: A = L * U.
+// The block products are computed with the requested multiplication
+// algorithm (Binet or Strassen). Requires a square, non-singular matrix.
+template <typename T>
+std::pair<Matrix2x<T>, Matrix2x<T>> LU(Matrix2xView<T> &a, enumMatMult type);
+
 } // namespace mutils

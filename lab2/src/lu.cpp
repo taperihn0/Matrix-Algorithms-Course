@@ -1,8 +1,9 @@
 #include "lu.hpp"
-#include "lab1/src/matrix_utils.hpp"
 
 #include <cassert>
 #include <utility>
+
+namespace mutils {
 
 namespace {
 
@@ -161,3 +162,5 @@ LU<mfloat>(Matrix2xView<mfloat> &, enumMatMult);
 
 template std::pair<Matrix2x<mdouble>, Matrix2x<mdouble>>
 LU<mdouble>(Matrix2xView<mdouble> &, enumMatMult);
+
+} // namespace mutils

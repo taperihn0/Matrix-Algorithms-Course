@@ -1,6 +1,7 @@
 #include "lab1/src/intermediate_buffer.hpp"
 #include "lab1/src/matrix.hpp"
 #include "lab1/src/matrix_utils.hpp"
+#include "lu.hpp"
 #include <cassert>
 
 template <typename T, enumMatMult Alg>
@@ -27,10 +28,10 @@ void inverse_impl(Matrix2xView<T> &a, Matrix2xView<T> &acc,
   auto a21 = Matrix2xView<T>(a, n_l, 0, n_r, n_l);
   auto a22 = Matrix2xView<T>(a, n_l, n_l, n_r, n_r);
 
-  auto b11 = Matrix2xView<T>(acc, 0, 0, n_l, n_l);
-  auto b12 = Matrix2xView<T>(acc, 0, n_l, n_l, n_r);
-  auto b21 = Matrix2xView<T>(acc, n_l, 0, n_r, n_l);
-  auto b22 = Matrix2xView<T>(acc, n_l, n_l, n_r, n_r);
+  auto b11 = Matrix2xView(acc, 0, 0, n_l, n_l);
+  auto b12 = Matrix2xView(acc, 0, n_l, n_l, n_r);
+  auto b21 = Matrix2xView(acc, n_l, 0, n_r, n_l);
+  auto b22 = Matrix2xView(acc, n_l, n_l, n_r, n_r);
 
   inverse_impl<T, Alg>(a11, ainv, buf);
 
