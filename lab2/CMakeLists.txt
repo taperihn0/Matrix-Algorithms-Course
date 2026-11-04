@@ -8,7 +8,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(DEBUG)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(RELEASE)
-    add_compile_options(-O3 -ffast-math)
+    add_compile_options(-Ofast -mtune=native)
 endif()
 
 add_library(lab1MatrixLib STATIC
@@ -22,6 +22,7 @@ target_include_directories(lab1MatrixLib PUBLIC
 )
 
 add_library(lab2MatrixLib STATIC
+    src/benchmark.cpp
     src/inverse.cpp
     src/lu.cpp
 )

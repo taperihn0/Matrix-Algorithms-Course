@@ -142,7 +142,7 @@ static void test_lu_algorithm(enumMatMult alg, const char *name) {
     Matd a = make_spd(n, static_cast<unsigned>(n) * 29u + 7u);
     auto a_view = a.submatrix_view(0, 0, n, n);
 
-    auto [L, U] = LU(a_view, alg);
+    auto [L, U] = mutils::LU(a_view, alg);
 
     CHECK_CLOSE(matrix_mul(L, U, alg), a, 1e-9,
                 std::string(name) + " L*U n=" + std::to_string(n));

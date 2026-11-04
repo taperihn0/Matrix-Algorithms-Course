@@ -32,11 +32,9 @@ template <typename T>
 void binet_matrix_mul_accum(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
                             Matrix2xView<T> &acc) {
   assert(a.cols() == b.rows());
-  // Note: sub-blocks may be rectangular when n is odd, so only the
-  // dimension-compatibility asserts apply here.
   assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
-  static constexpr auto BinetBaseBlockSize = 4uz;
+  static constexpr auto BinetBaseBlockSize = 48uz;
 
   const auto n = a.rows();
 
@@ -49,8 +47,6 @@ void binet_matrix_mul_accum(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
   const auto n_inner = a.cols();
   const auto n_cols = b.cols();
 
-  // Independent row / inner / column splits: sub-blocks are rectangular
-  // for odd dimensions, and each recursion level may split them differently.
   const auto rows_l = n_rows / 2;
   const auto rows_r = n_rows - rows_l;
   const auto inner_l = n_inner / 2;
@@ -109,7 +105,7 @@ void strassen_matrix_mul_accum(const Matrix2xView<T> &a,
   assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
   const auto n = a.rows();
-  static constexpr auto StrassenBaseBlockSize = 4uz;
+  static constexpr auto StrassenBaseBlockSize = 48uz;
 
   if (n <= StrassenBaseBlockSize) {
     default_matrix_mul_accum(a, b, acc);
@@ -239,7 +235,7 @@ void laderman_matrix_mul_accum(const Matrix2xView<T> &a,
   assert(a.rows() == a.cols() && b.rows() == b.cols());
   assert(a.rows() == acc.rows() && b.cols() == acc.cols());
 
-  static constexpr auto LadermanBaseBlockSize = 4uz;
+  static constexpr auto LadermanBaseBlockSize = 48uz;
 
   const auto n = a.rows();
 
@@ -537,70 +533,78 @@ void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
   } else if constexpr (Alg == enumMatMult::Binet) {
     binet::binet_matrix_mul_accum(a, b, acc);
   } else {
-    // Strassen and Laderman work on square blocks only. Sub-blocks of odd
-    // sized matrices are rectangular, so pad them to a common square size,
-    // multiply and copy the result back.
+    // Strassen and Laderman only work on square blocks, so multiply the
+    // largest square that fits into all three dimensions directly from views
+    // of the inputs (no padded copies) and accumulate the rows and columns
+    // that stick out with the classic algorithm.
     const auto a_rows = a.rows();
     const auto a_cols = a.cols();
     const auto b_cols = b.cols();
 
-    if (a_rows != a_cols || a_cols != b_cols) {
-      const auto m = std::max({a_rows, a_cols, b_cols});
+    const auto sq = std::min({a_rows, a_cols, b_cols});
 
-      Matrix2x<T> a_padded(m, m);
-      Matrix2x<T> b_padded(m, m);
-      Matrix2x<T> res_padded(m, m);
+    if (sq > 0) {
+      auto a_sq = Matrix2xView<T>(a, 0, 0, sq, sq);
+      auto b_sq = Matrix2xView<T>(b, 0, 0, sq, sq);
+      auto c_sq = Matrix2xView<T>(acc, 0, 0, sq, sq);
 
-      for (std::size_t i = 0; i < a_rows; ++i) {
-        for (std::size_t j = 0; j < a_cols; ++j) {
-          a_padded(i, j) = a(i, j);
-        }
+      static constexpr auto SafetyBufMargin = 32uz;
+      const auto total_size = sq * sq;
+
+      if constexpr (Alg == enumMatMult::Strassen) {
+        const auto pbuf_size =
+            static_cast<std::size_t>(2.34 * total_size) + SafetyBufMargin;
+        const auto uvbuf_size =
+            static_cast<std::size_t>(0.67 * total_size) + SafetyBufMargin;
+
+        IntermediateBuffer<T> pbuf(pbuf_size);
+        IntermediateBuffer<T> uvbuf(uvbuf_size);
+
+        strassen::strassen_matrix_mul_accum(a_sq, b_sq, c_sq, pbuf, uvbuf);
+      } else {
+        const auto mbuf_size =
+            static_cast<std::size_t>(2.875 * total_size) + SafetyBufMargin;
+        const auto uvbuf_size =
+            static_cast<std::size_t>(0.25 * total_size) + SafetyBufMargin;
+
+        IntermediateBuffer<T> mbuf(mbuf_size);
+        IntermediateBuffer<T> uvbuf(uvbuf_size);
+
+        laderman::laderman_matrix_mul_accum(a_sq, b_sq, c_sq, mbuf, uvbuf);
       }
-
-      for (std::size_t i = 0; i < a_cols; ++i) {
-        for (std::size_t j = 0; j < b_cols; ++j) {
-          b_padded(i, j) = b(i, j);
-        }
-      }
-
-      auto a_view = a_padded.submatrix_view(0, 0, m, m);
-      auto b_view = b_padded.submatrix_view(0, 0, m, m);
-      auto res_view = res_padded.submatrix_view(0, 0, m, m);
-
-      matrix_mul_alg<T, Alg>(a_view, b_view, res_view);
-
-      for (std::size_t i = 0; i < a_rows; ++i) {
-        for (std::size_t j = 0; j < b_cols; ++j) {
-          acc(i, j) = res_padded(i, j);
-        }
-      }
-
-      return;
     }
 
-    static constexpr auto SafetyBufMargin = 32uz;
-    const auto total_size = a_rows * b_cols;
+    // The square block only covers the first `sq` columns of A and the first
+    // `sq` rows of B, so the rest of the inner dimension and the rows/columns
+    // outside the block are accumulated traditionally.
+    for (std::size_t i = 0; i < sq; ++i) {
+      for (std::size_t j = 0; j < sq; ++j) {
+        T sum = static_cast<T>(0);
+        for (std::size_t k = sq; k < a_cols; ++k) {
+          sum += a(i, k) * b(k, j);
+        }
+        acc(i, j) += sum;
+      }
+    }
 
-    if constexpr (Alg == enumMatMult::Strassen) {
-      const auto pbuf_size =
-          static_cast<std::size_t>(2.34 * total_size) + SafetyBufMargin;
-      const auto uvbuf_size =
-          static_cast<std::size_t>(0.67 * total_size) + SafetyBufMargin;
+    for (std::size_t i = sq; i < a_rows; ++i) {
+      for (std::size_t j = 0; j < b_cols; ++j) {
+        T sum = static_cast<T>(0);
+        for (std::size_t k = 0; k < a_cols; ++k) {
+          sum += a(i, k) * b(k, j);
+        }
+        acc(i, j) += sum;
+      }
+    }
 
-      IntermediateBuffer<T> pbuf(pbuf_size);
-      IntermediateBuffer<T> uvbuf(uvbuf_size);
-
-      strassen::strassen_matrix_mul_accum(a, b, acc, pbuf, uvbuf);
-    } else {
-      const auto mbuf_size =
-          static_cast<std::size_t>(2.875 * total_size) + SafetyBufMargin;
-      const auto uvbuf_size =
-          static_cast<std::size_t>(0.25 * total_size) + SafetyBufMargin;
-
-      IntermediateBuffer<T> mbuf(mbuf_size);
-      IntermediateBuffer<T> uvbuf(uvbuf_size);
-
-      laderman::laderman_matrix_mul_accum(a, b, acc, mbuf, uvbuf);
+    for (std::size_t i = 0; i < sq; ++i) {
+      for (std::size_t j = sq; j < b_cols; ++j) {
+        T sum = static_cast<T>(0);
+        for (std::size_t k = 0; k < a_cols; ++k) {
+          sum += a(i, k) * b(k, j);
+        }
+        acc(i, j) += sum;
+      }
     }
   }
 }
