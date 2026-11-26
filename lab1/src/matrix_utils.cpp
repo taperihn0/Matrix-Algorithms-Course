@@ -96,6 +96,13 @@ void binet_matrix_mul_accum(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
 namespace strassen {
 
 template <typename T>
+void strassen_matrix_mul_accum_preprocessed(const Matrix2xView<T> &a,
+                                            const Matrix2xView<T> &b, Matrix2xView<T> &acc)
+{
+
+}
+
+template <typename T>
 void strassen_matrix_mul_accum(const Matrix2xView<T> &a,
                                const Matrix2xView<T> &b, Matrix2xView<T> &acc,
                                IntermediateBuffer<T> &pbuf,
@@ -530,26 +537,25 @@ void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
 
   if constexpr (Alg == enumMatMult::Default) {
     default_matrix_mul_accum(a, b, acc);
-  } else if constexpr (Alg == enumMatMult::Binet) {
+  } 
+
+  else if constexpr (Alg == enumMatMult::Binet) {
     binet::binet_matrix_mul_accum(a, b, acc);
-  } else {
-    // Strassen and Laderman only work on square blocks, so multiply the
-    // largest square that fits into all three dimensions directly from views
-    // of the inputs (no padded copies) and accumulate the rows and columns
-    // that stick out with the classic algorithm.
-    const auto a_rows = a.rows();
-    const auto a_cols = a.cols();
-    const auto b_cols = b.cols();
+  } 
 
-    const auto sq = std::min({a_rows, a_cols, b_cols});
+  else {
+      const auto a_rows = a.rows();
+      const auto a_cols = a.cols();
+      const auto b_cols = b.cols();
 
-    if (sq > 0) {
-      auto a_sq = Matrix2xView<T>(a, 0, 0, sq, sq);
-      auto b_sq = Matrix2xView<T>(b, 0, 0, sq, sq);
-      auto c_sq = Matrix2xView<T>(acc, 0, 0, sq, sq);
+      const auto shr_n = std::min({a_rows, a_cols, b_cols});
+
+      auto a_shr = Matrix2xView<T>(a, 0, 0, shr_n, shr_n);
+      auto b_shr = Matrix2xView<T>(b, 0, 0, shr_n, shr_n);
+      auto c_shr = Matrix2xView<T>(acc, 0, 0, shr_n, shr_n);
 
       static constexpr auto SafetyBufMargin = 32uz;
-      const auto total_size = sq * sq;
+      const auto total_size = shr_n * shr_n;
 
       if constexpr (Alg == enumMatMult::Strassen) {
         const auto pbuf_size =
@@ -560,8 +566,9 @@ void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
         IntermediateBuffer<T> pbuf(pbuf_size);
         IntermediateBuffer<T> uvbuf(uvbuf_size);
 
-        strassen::strassen_matrix_mul_accum(a_sq, b_sq, c_sq, pbuf, uvbuf);
-      } else {
+        strassen::strassen_matrix_mul_accum(a_shr, b_shr, c_shr, pbuf, uvbuf);
+      } 
+      else {
         const auto mbuf_size =
             static_cast<std::size_t>(2.875 * total_size) + SafetyBufMargin;
         const auto uvbuf_size =
@@ -570,43 +577,42 @@ void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
         IntermediateBuffer<T> mbuf(mbuf_size);
         IntermediateBuffer<T> uvbuf(uvbuf_size);
 
-        laderman::laderman_matrix_mul_accum(a_sq, b_sq, c_sq, mbuf, uvbuf);
+        laderman::laderman_matrix_mul_accum(a_shr, b_shr, c_shr, mbuf, uvbuf);
       }
-    }
 
-    // The square block only covers the first `sq` columns of A and the first
-    // `sq` rows of B, so the rest of the inner dimension and the rows/columns
-    // outside the block are accumulated traditionally.
-    for (std::size_t i = 0; i < sq; ++i) {
-      for (std::size_t j = 0; j < sq; ++j) {
-        T sum = static_cast<T>(0);
-        for (std::size_t k = sq; k < a_cols; ++k) {
-          sum += a(i, k) * b(k, j);
-        }
-        acc(i, j) += sum;
-      }
-    }
+      if (a_rows == a_cols && a_cols == b_cols) // means no slice left, square matricies
+        return; 
 
-    for (std::size_t i = sq; i < a_rows; ++i) {
-      for (std::size_t j = 0; j < b_cols; ++j) {
-        T sum = static_cast<T>(0);
-        for (std::size_t k = 0; k < a_cols; ++k) {
-          sum += a(i, k) * b(k, j);
+      for (std::size_t i = 0; i < shr_n; ++i) {
+        for (std::size_t j = 0; j < shr_n; ++j) {
+          T sum = static_cast<T>(0);
+          for (std::size_t k = shr_n; k < a_cols; ++k) {
+            sum += a(i, k) * b(k, j);
+          }
+          acc(i, j) += sum;
         }
-        acc(i, j) += sum;
       }
-    }
 
-    for (std::size_t i = 0; i < sq; ++i) {
-      for (std::size_t j = sq; j < b_cols; ++j) {
-        T sum = static_cast<T>(0);
-        for (std::size_t k = 0; k < a_cols; ++k) {
-          sum += a(i, k) * b(k, j);
+      for (std::size_t i = shr_n; i < a_rows; ++i) {
+        for (std::size_t j = 0; j < b_cols; ++j) {
+          T sum = static_cast<T>(0);
+          for (std::size_t k = 0; k < a_cols; ++k) {
+            sum += a(i, k) * b(k, j);
+          }
+          acc(i, j) += sum;
         }
-        acc(i, j) += sum;
+      }
+
+      for (std::size_t i = 0; i < shr_n; ++i) {
+        for (std::size_t j = shr_n; j < b_cols; ++j) {
+          T sum = static_cast<T>(0);
+          for (std::size_t k = 0; k < a_cols; ++k) {
+            sum += a(i, k) * b(k, j);
+          }
+          acc(i, j) += sum;
+        }
       }
     }
-  }
 }
 
 } // namespace mutils

@@ -8,7 +8,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(DEBUG)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions(RELEASE)
-    add_compile_options(-Ofast -mtune=native)
+    add_compile_options(-Ofast -mtune=native -march=native)
 endif()
 
 add_library(lab1MatrixLib STATIC
@@ -38,3 +38,8 @@ add_executable(MatrixMulLabs
 )
 
 target_link_libraries(MatrixMulLabs PRIVATE lab2MatrixLib)
+
+# Fixed inverse test cases read by src/tests.hpp (Debug builds only).
+target_compile_definitions(MatrixMulLabs PRIVATE
+    LAB2_TEST_DATA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/inverse_cases.txt"
+)

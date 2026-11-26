@@ -101,7 +101,7 @@ def average_trials(
 
 
 def load_time_data(files: list[str]) -> dict[str, np.ndarray] | None:
-    """Reads ``n,time_seconds`` files and averages them."""
+    """Reads ``n,time_seconds`` files, converts to milliseconds, and averages them."""
     trials = []
 
     for path in files:
@@ -111,7 +111,7 @@ def load_time_data(files: list[str]) -> dict[str, np.ndarray] | None:
 
         order = np.argsort(data[:, 0])
         sizes = data[order, 0].astype(int)
-        times = data[order, 1]
+        times = data[order, 1] * 1000.0  # seconds -> milliseconds
         trials.append((sizes, times))
 
     return average_trials(trials)
@@ -162,28 +162,73 @@ def downsample(x, y, max_points=400):
     return x[::step], y[::step]
 
 
-def format_number(v):
-    """Readable tick labels for both tiny times and huge operation counts."""
-    magnitude = abs(v)
-    if magnitude >= 1e6:
-        return f"{v / 1e6:.1f}M"
-    if magnitude >= 1e3:
-        return f"{v / 1e3:.0f}k"
-    if magnitude >= 1 or magnitude == 0:
-        return f"{v:.0f}"
-    return f"{v:.4f}"
-
-
-def format_large_numbers(ax, axis="y"):
-    formatter = ticker.FuncFormatter(lambda v, _: format_number(v))
+def format_axis(ax, axis="y"):
+    """Plain numbers when they fit, otherwise one shared ``x10^n`` multiplier."""
+    formatter = ticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((-3, 4))
     if axis == "y":
         ax.yaxis.set_major_formatter(formatter)
     else:
         ax.xaxis.set_major_formatter(formatter)
 
 
+def trials_phrase(counts: set[int]) -> str:
+    """``{3}`` -> ``3 prób``, ``{2, 3}`` -> ``2–3 prób``."""
+    if len(counts) > 1:
+        return f"{min(counts)}–{max(counts)} prób"
+
+    k = next(iter(counts))
+    if k == 1:
+        return "1 próby"
+    if 2 <= k % 10 <= 4 and not 12 <= k % 100 <= 14:
+        return f"{k} prób"
+    return f"{k} prób"
+
+
+def save_plots(series, ylabel: str, title: str, filename: str):
+    """Saves one metric as separate linear and log-log figures."""
+    average = f"średnia z {trials_phrase({count for _, _, count in series})}"
+    colors = plt.get_cmap("tab10").colors
+    base, ext = os.path.splitext(filename)
+    outputs = [(filename, False), (f"{base}_loglog{ext}", True)]
+
+    for output, loglog in outputs:
+        fig, ax = plt.subplots(figsize=(9, 7))
+
+        for idx, (name, data, _) in enumerate(series):
+            color = colors[idx % len(colors)]
+            label = label_for(name)
+
+            if loglog:
+                mask = (data["sizes"] > 0) & (data["values"] > 0)
+                xs, ys = data["sizes"][mask], data["values"][mask]
+            else:
+                xs, ys = downsample(data["sizes"], data["values"])
+
+            ax.plot(xs, ys, color=color, label=label, linewidth=2, alpha=0.9)
+
+        ax.set_xlabel("Rozmiar macierzy (n)")
+        ax.set_ylabel(ylabel)
+        ax.legend(loc="upper left", framealpha=0.9)
+
+        if loglog:
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.set_title(f"{title} (skala log-log) — {average}")
+        else:
+            ax.set_xlim(left=0)
+            format_axis(ax)
+            ax.set_title(f"{title} — {average}")
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(PLOTS_DIR, output), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  ✓ {output}")
+
+
 def plot_metric(kind: str, prefix: str, ylabel: str, title: str, filename: str):
-    """Draws the metric in a linear and a log-log panel for one algorithm family."""
+    """Plots one metric (time or operation count) for one algorithm family."""
     groups = discover_trials(kind)
     series = []
 
@@ -192,49 +237,51 @@ def plot_metric(kind: str, prefix: str, ylabel: str, title: str, filename: str):
             continue
         data = load_time_data(files) if kind == "time" else load_op_data(files)
         if data is not None:
-            series.append((name, data))
+            series.append((name, data, len(files)))
 
     if not series:
         print(f"  ! {filename}: brak danych w {os.path.join(STATS_DIR, kind)}")
         return
 
-    colors = plt.get_cmap("tab10").colors
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
+    save_plots(series, ylabel, title, filename)
 
-    for idx, (name, data) in enumerate(series):
-        color = colors[idx % len(colors)]
-        label = label_for(name)
 
-        sx, sy = downsample(data["sizes"], data["values"])
-        axes[0].plot(sx, sy, color=color, label=label, linewidth=2, alpha=0.9)
+def plot_flops(prefix: str, title: str, filename: str):
+    """Plots operations per second (op_num(n) / t(n)) for one algorithm family."""
+    time_groups = discover_trials("time")
+    op_groups = discover_trials("op")
+    series = []
 
-        mask = (data["sizes"] > 0) & (data["values"] > 0)
-        axes[1].plot(
-            data["sizes"][mask],
-            data["values"][mask],
-            color=color,
-            label=label,
-            linewidth=2,
-            alpha=0.9,
-        )
+    for name, time_files in time_groups.items():
+        if not name.startswith(prefix + "_") or name not in op_groups:
+            continue
 
-    for ax in axes:
-        ax.set_xlabel("Rozmiar macierzy (n)")
-        ax.set_ylabel(ylabel)
-        ax.legend(loc="upper left", framealpha=0.9)
+        time_data = load_time_data(time_files)
+        op_data = load_op_data(op_groups[name])
+        if time_data is None or op_data is None:
+            continue
 
-    axes[0].set_title(f"{title} — średnia z prób")
-    axes[0].set_xlim(left=0)
-    format_large_numbers(axes[0])
+        # Time and op files must agree on the size, so keep the common ones.
+        common = np.intersect1d(time_data["sizes"], op_data["sizes"])
+        if common.size == 0:
+            continue
 
-    axes[1].set_xscale("log")
-    axes[1].set_yscale("log")
-    axes[1].set_title(f"{title} (skala log-log) — średnia z prób")
+        ms = time_data["values"][np.searchsorted(time_data["sizes"], common)]
+        ops = op_data["values"][np.searchsorted(op_data["sizes"], common)]
 
-    fig.tight_layout()
-    fig.savefig(os.path.join(PLOTS_DIR, filename), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  ✓ {filename}")
+        mask = ms > 0  # a zero measurement would divide by zero
+        if not mask.any():
+            continue
+
+        flops = ops[mask] / (ms[mask] / 1000.0)  # ops / seconds
+        trials = min(len(time_files), len(op_groups[name]))
+        series.append((name, {"sizes": common[mask], "values": flops}, trials))
+
+    if not series:
+        print(f"  ! {filename}: brak danych w {os.path.join(STATS_DIR, 'time')} / op")
+        return
+
+    save_plots(series, "Wydajność [FLOPS]", title, filename)
 
 
 # ──────────────────────────────────────────────
@@ -246,7 +293,7 @@ if __name__ == "__main__":
     plot_metric(
         kind="time",
         prefix="inverse",
-        ylabel="Czas wykonania [s]",
+        ylabel="Czas wykonania [ms]",
         title="Czas wykonania odwracania macierzy t(n)",
         filename="01_czas_odwracania.png",
     )
@@ -254,7 +301,7 @@ if __name__ == "__main__":
     plot_metric(
         kind="time",
         prefix="lu",
-        ylabel="Czas wykonania [s]",
+        ylabel="Czas wykonania [ms]",
         title="Czas wykonania rozkładu LU t(n)",
         filename="02_czas_lu.png",
     )
@@ -262,7 +309,7 @@ if __name__ == "__main__":
     plot_metric(
         kind="op",
         prefix="inverse",
-        ylabel="Całkowita liczba operacji (dod. + odejm. + mnoż. + dziel.)",
+        ylabel="Całkowita liczba operacji na liczbach zmiennoprzecinkowych",
         title="Liczba operacji odwracania macierzy op_num(n)",
         filename="03_operacje_odwracania.png",
     )
@@ -270,9 +317,21 @@ if __name__ == "__main__":
     plot_metric(
         kind="op",
         prefix="lu",
-        ylabel="Całkowita liczba operacji (dod. + odejm. + mnoż. + dziel.)",
+        ylabel="Całkowita liczba operacji na liczbach zmiennoprzecinkowych",
         title="Liczba operacji rozkładu LU op_num(n)",
         filename="04_operacje_lu.png",
+    )
+
+    plot_flops(
+        prefix="inverse",
+        title="Wydajność odwracania macierzy (FLOPS)",
+        filename="05_flops_odwracania.png",
+    )
+
+    plot_flops(
+        prefix="lu",
+        title="Wydajność rozkładu LU (FLOPS)",
+        filename="06_flops_lu.png",
     )
 
     print(f"\nWszystkie wykresy zapisane w: {os.path.abspath(PLOTS_DIR)}")

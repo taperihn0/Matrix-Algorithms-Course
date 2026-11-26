@@ -30,12 +30,40 @@ python main.py
 
 Figures are written to `lab2/tools/plots/`:
 
+Each metric is saved as two separate figures: a linear plot and a log-log plot.
+
 | File | Content |
 | --- | --- |
-| `01_czas_odwracania.png` | `t(n)` for the inverse algorithms, linear and log-log |
-| `02_czas_lu.png` | `t(n)` for the LU factorizations, linear and log-log |
-| `03_operacje_odwracania.png` | `op_num(n)` for the inverse algorithms |
-| `04_operacje_lu.png` | `op_num(n)` for the LU factorizations |
+| `01_czas_odwracania.png` | `t(n)` for the inverse algorithms, linear |
+| `01_czas_odwracania_loglog.png` | `t(n)` for the inverse algorithms, log-log |
+| `02_czas_lu.png` | `t(n)` for the LU factorizations, linear |
+| `02_czas_lu_loglog.png` | `t(n)` for the LU factorizations, log-log |
+| `03_operacje_odwracania.png` | `op_num(n)` for the inverse algorithms, linear |
+| `03_operacje_odwracania_loglog.png` | `op_num(n)` for the inverse algorithms, log-log |
+| `04_operacje_lu.png` | `op_num(n)` for the LU factorizations, linear |
+| `04_operacje_lu_loglog.png` | `op_num(n)` for the LU factorizations, log-log |
+| `05_flops_odwracania.png` | `op_num(n) / t(n)` for the inverse algorithms, linear |
+| `05_flops_odwracania_loglog.png` | `op_num(n) / t(n)` for the inverse algorithms, log-log |
+| `06_flops_lu.png` | `op_num(n) / t(n)` for the LU factorizations, linear |
+| `06_flops_lu_loglog.png` | `op_num(n) / t(n)` for the LU factorizations, log-log |
+
+Times are stored in seconds in `stats/time/` but plotted in milliseconds.
+
+FLOPS is operations per second: the mean `op_num(n)` from `stats/op/` divided
+by the mean time in seconds from `stats/time/` (counted add/sub/mul/div, each
+worth one operation). The two files are joined on the sizes they share.
+
+## Inverse test fixtures
+
+`generate_inverse_tests.py` (re)writes `lab2/tests/data/inverse_cases.txt` —
+fixed SPD matrices with numpy-computed inverses used by the big inverse tests
+in `lab2/src/tests.hpp`. Run it after changing the sizes in the script:
+
+```bash
+uv run generate_inverse_tests.py
+# or
+python3 generate_inverse_tests.py
+```
 
 ## Input data
 

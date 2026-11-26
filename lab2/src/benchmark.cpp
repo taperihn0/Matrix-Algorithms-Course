@@ -26,34 +26,17 @@ struct Series {
   std::ofstream op_out;
 };
 
-// Deterministic symmetric positive definite matrix: M^T * M + n * I.
-// SPD means it is non-singular, so LU without pivoting is well defined.
 template <typename T>
-Matrix2x<T> make_spd(std::size_t n, unsigned seed) {
-  Matrix2x<T> m(n, n);
+Matrix2x<T> make_random_matrix(std::size_t n, unsigned seed) {
+  Matrix2x<T> result(n, n);
+
+  ::srand(seed);
 
   unsigned state = seed;
   for (std::size_t i = 0; i < n; ++i) {
     for (std::size_t j = 0; j < n; ++j) {
-      state = state * 1664525u + 1013904223u;
-      const float value = static_cast<float>((state >> 8) % 2001) / 1000.0f - 1.0f;
-      m(i, j) = static_cast<T>(value);
+      result(i, j) = static_cast<T>((::rand() % 1000) / 100.0);
     }
-  }
-
-  Matrix2x<T> result(n, n);
-  for (std::size_t i = 0; i < n; ++i) {
-    for (std::size_t j = 0; j < n; ++j) {
-      T sum = static_cast<T>(0);
-      for (std::size_t k = 0; k < n; ++k) {
-        sum += m(k, i) * m(k, j);
-      }
-      result(i, j) = sum;
-    }
-  }
-
-  for (std::size_t i = 0; i < n; ++i) {
-    result(i, i) += static_cast<T>(n);
   }
 
   return result;
@@ -99,7 +82,7 @@ void Benchmark::run(const Config &cfg) {
 
     for (std::size_t n = cfg.start; n < cfg.end; n += cfg.step) {
       const auto base =
-          make_spd<mfloat>(n, static_cast<unsigned>(n) * 17u + trial * 131u + 3u);
+          make_random_matrix<mfloat>(n, static_cast<unsigned>(n) * 17u + trial * 131u + 3u);
 
       for (auto &s : series) {
         Matrix2x<mfloat> work = base; // every algorithm gets the same input

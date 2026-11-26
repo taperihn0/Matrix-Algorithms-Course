@@ -109,7 +109,7 @@ Matrix2x<T> &Matrix2x<T>::inverse(Matrix2x<T> &acc, enumMatMult alg) {
 
   static constexpr auto SafetyBufMargin = 32uz;
 
-  IntermediateBuffer<T> buf(5. / 3. * rows() *  cols() + SafetyBufMargin); // We can do better I guess
+  IntermediateBuffer<T> buf(5. / 3. * rows() *  cols() + SafetyBufMargin);
 
   switch (alg) {
   case enumMatMult::Default:
