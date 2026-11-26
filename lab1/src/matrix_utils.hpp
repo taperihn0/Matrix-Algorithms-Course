@@ -37,14 +37,10 @@ void laderman_matrix_mul_accum(const Matrix2xView<T> &a,
 template <typename T, enumMatMult Alg>
 Matrix2x<T> matrix_mul_alg(const Matrix2x<T> &a, const Matrix2x<T> &b);
 
-// Overwrites acc with a * b, without allocating result storage.
 template <typename T, enumMatMult Alg>
 void matrix_mul_alg(const Matrix2xView<T> &a, const Matrix2xView<T> &b,
                     Matrix2xView<T> &acc);
 
-// Block LU factorization without pivoting: A = L * U.
-// The block products are computed with the requested multiplication
-// algorithm (Binet or Strassen). Requires a square, non-singular matrix.
 template <typename T>
 std::pair<Matrix2x<T>, Matrix2x<T>> LU(Matrix2xView<T> &a, enumMatMult type);
 

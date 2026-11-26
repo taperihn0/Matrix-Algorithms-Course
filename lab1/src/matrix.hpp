@@ -19,16 +19,21 @@ enum class enumMatMult {
   Laderman 
 };
 
+template <typename T> 
+class Matrix2xView;
 
-template <typename T> class Matrix2xView;
-
-template <typename T> class Matrix2x {
+template <typename T> 
+class Matrix2x {
 public:
   using value_type = T;
   using size_type = std::size_t;
 
   Matrix2x() = default;
   explicit Matrix2x(size_type n, size_type m);
+  explicit Matrix2x(std::initializer_list<std::initializer_list<T>> init);
+  Matrix2x(const Matrix2x &other);
+  Matrix2x(Matrix2x &&other) noexcept;
+  ~Matrix2x();
 
   Matrix2xView<T> submatrix_view(size_type start_row, size_type start_col,
                                  size_type view_rows, size_type view_cols);
@@ -56,14 +61,8 @@ public:
   Matrix2x &operator*=(T rhs);
   Matrix2x &operator/=(T rhs);
 
-  Matrix2x(std::initializer_list<std::initializer_list<T>> init);
-
-  Matrix2x(const Matrix2x &other);
-  Matrix2x(Matrix2x &&other) noexcept;
   Matrix2x &operator=(const Matrix2x &other);
   Matrix2x &operator=(Matrix2x &&other) noexcept;
-
-  ~Matrix2x();
 
   bool operator==(const Matrix2x &rhs) const;
   bool operator!=(const Matrix2x &rhs) const;
@@ -91,7 +90,8 @@ template <typename T>
 Matrix2x<T> matrix_mul(const Matrix2x<T> &a, const Matrix2x<T> &b,
                        enumMatMult alg = enumMatMult::Binet);
 
-template <typename T> class Matrix2xView {
+template <typename T> 
+class Matrix2xView {
 public:
   using size_type = std::size_t;
 
