@@ -9,19 +9,22 @@ void compress_impl(const Matrix2xView<T>& m,
                    T delta,
                    std::size_t max_rank)
 {
+  const auto rows = m.rows();
+  const auto cols = m.cols();
+
   node.leaf = false;
   node.view = m;
 
   // compute svd
   // stop on conditions
 
-  const auto n_l = n / 2;
-  const auto n_r = n - n_l;
+  const auto rows_d2 = rows / 2;
+  const auto cols_d2 = cols / 2;
 
-  auto m11 = m.submatrix_view(0, 0, n_l, n_l);
-  auto m12 = m.submatrix_view(0, n_l, n_l, n_r);
-  auto m21 = m.submatrix_view(n_l, 0, n_r, n_l);
-  auto m22 = m.submatrix_view(n_l, n_l, n_r, n_r);
+  auto m11 = m.submatrix_view(0, 0, rows_d2, cols_d2);
+  auto m12 = m.submatrix_view(0, cols_d2 + 1, rows_d2, cols_d2);
+  auto m21 = m.submatrix_view(rows_d2 + 1, 0, rows_d2, cols_d2);
+  auto m22 = m.submatrix_view(rows_d2 + 1, cols_d2 + 1, rows_d2, cols_d2);
 
   compress_impl(m11, node.children[0], delta, max_rank);
   compress_impl(m12, node.children[1], delta, max_rank);
