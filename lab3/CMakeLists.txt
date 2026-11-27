@@ -23,6 +23,7 @@ target_include_directories(lab1MatrixLib PUBLIC
 
 add_library(lab3MatrixLib STATIC
     src/compress.cpp
+    src/picture.cpp
 )
 
 target_include_directories(lab3MatrixLib PUBLIC
@@ -36,3 +37,8 @@ add_executable(MatrixCompressLab
 )
 
 target_link_libraries(MatrixCompressLab PRIVATE lab3MatrixLib)
+
+# Fixed svd test cases read by src/tests.hpp (Debug builds only).
+target_compile_definitions(MatrixCompressLab PRIVATE
+    LAB3_SVD_TEST_DATA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/svd_cases.txt"
+)

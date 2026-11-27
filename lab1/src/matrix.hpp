@@ -22,6 +22,9 @@ enum class enumMatMult {
 template <typename T> 
 class Matrix2xView;
 
+template <typename T>
+class Vector;
+
 template <typename T> 
 class Matrix2x {
 public:
@@ -33,6 +36,7 @@ public:
   explicit Matrix2x(std::initializer_list<std::initializer_list<T>> init);
   Matrix2x(const Matrix2x &other);
   Matrix2x(Matrix2x &&other) noexcept;
+  Matrix2x(const Matrix2xView<T> &other);
   ~Matrix2x();
 
   Matrix2xView<T> submatrix_view(size_type start_row, size_type start_col,
@@ -50,6 +54,8 @@ public:
   Matrix2x operator-(T rhs) const;
   Matrix2x operator*(T rhs) const;
   Matrix2x operator/(T rhs) const;
+
+  Vector<T> operator*(const Vector<T> &rhs) const;
 
   Matrix2x &operator+=(const Matrix2x &rhs);
   Matrix2x &operator-=(const Matrix2x &rhs);
@@ -75,6 +81,8 @@ public:
 
   T *data();
   const T *data() const;
+
+  Matrix2x<T> transpose() const;
 
   Matrix2x<T> &inverse(Matrix2x<T> &acc, enumMatMult alg = enumMatMult::Binet);
 
@@ -212,7 +220,28 @@ template <typename T>
 inline Matrix2x<T>::Matrix2x(Matrix2x &&other) noexcept
     : m_rows(std::exchange(other.m_rows, 0)),
       m_cols(std::exchange(other.m_cols, 0)),
-      m_data(std::exchange(other.m_data, nullptr)) {}
+      m_data(std::exchange(other.m_data, nullptr)) 
+{}
+
+template <typename T>
+inline Matrix2x<T>::Matrix2x(const Matrix2xView<T> &other)
+  : m_rows(other.rows()), m_cols(other.cols()), m_data()
+{
+  if (m_rows == 0 || m_cols == 0) {
+    return;
+  }
+  const auto nelem = m_rows * m_cols;
+  auto *raw = static_cast<T *>(::operator new(nelem * sizeof(T),
+                                               std::align_val_t(CachelineSize)));
+
+  m_data.reset(raw);
+
+  for (auto i = 0uz; i < m_rows; i++) {
+    for (auto j = 0uz; j < m_cols; j++) {
+      this->operator()(i, j) = other(i, j);
+    }
+  }
+}
 
 template <typename T>
 inline Matrix2x<T> &Matrix2x<T>::operator=(const Matrix2x &other) {
@@ -444,6 +473,19 @@ template <typename T> inline Matrix2x<T> &Matrix2x<T>::operator*=(T rhs) {
 template <typename T> inline Matrix2x<T> &Matrix2x<T>::operator/=(T rhs) {
   *this = *this / rhs;
   return *this;
+}
+
+template <typename T>
+inline Matrix2x<T> Matrix2x<T>::transpose() const {
+  Matrix2x res(cols(), rows());
+
+  for (size_type i = 0; i < m_rows; ++i) {
+    for (size_type j = 0; j < m_cols; ++j) {
+      res.m_data[j * m_rows + i] = m_data[i * m_cols + j];
+    }
+  }
+
+  return res;
 }
 
 template <typename T>
